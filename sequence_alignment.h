@@ -40,9 +40,9 @@ void output_print(Payload *data, Alignment *res);
 
 Alignment* find_mutants(const Payload *source, Alignment *res, int idx);
 Alignment* find_offset(const Payload *source, Alignment *res);
-Alignment* compare_and_swap(const Alignment *a1, Alignment *a2);
+void compare_and_swap(const Alignment *a1, Alignment *a2);
 Alignment* copy(const Alignment *source, Alignment *dest);
-Alignment* compare(const Payload *d, Alignment *a);
+void compare(const Payload *d, Alignment *a);
 
 void get_data(Payload *data, Alignment *res, int * num_of_sequences);
 
