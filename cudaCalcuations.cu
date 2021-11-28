@@ -27,16 +27,16 @@ __device__ char* dev_strcpy(char *dest, char *source) {
 
 __device__ Alignment* dev_copy(const Alignment *source, Alignment *dest) {
 	dest->offset = source->offset;
-	dest->score = source->score;
 	dest->char_idx = source->char_idx;
 	dest->char_val = source->char_val;
+	dest->alignment_score = source->alignment_score;
 	return dest;
 }
 
-__device__ Alignment* dev_compare(const Data *d, Alignment *a, char *chars_comparision,
+__device__ Alignment* dev_compare(const Payload *d, Alignment *a, char *chars_comparision,
 		double *weights) {
 	int c1, c2;
-	a->score = 0;
+	a->alignment_score = 0;
 	for (int chr_ofst = 0; chr_ofst < d->len; ++chr_ofst) {
 		c1 = d->seq1[chr_ofst + a->offset] - 'A';
 		if (chr_ofst == a->char_idx) {
@@ -46,16 +46,16 @@ __device__ Alignment* dev_compare(const Data *d, Alignment *a, char *chars_compa
 		}
 		switch (chars_comparision[c1 * CHARS + c2]) {
 		case '$':
-			a->score += weights[0];
+			a->alignment_score += weights[0];
 			break;
 		case '%':
-			a->score -= weights[1];
+			a->alignment_score -= weights[1];
 			break;
 		case '#':
-			a->score -= weights[2];
+			a->alignment_score -= weights[2];
 			break;
 		default:
-			a->score -= weights[3];
+			a->alignment_score -= weights[3];
 			break;
 		}
 	}
@@ -63,12 +63,12 @@ __device__ Alignment* dev_compare(const Data *d, Alignment *a, char *chars_compa
 }
 
 __device__ Alignment* dev_compare_and_swap(const Alignment *a1, Alignment *a2) {
-	if (a1->score > a2->score) {
+	if (a1->alignment_score > a2->alignment_score) {
 		dev_copy(a1, a2);
 	}
 	return a2;
 }
-__device__ Alignment* dev_find_offset(const Data *source, Alignment *res,
+__device__ Alignment* dev_find_offset(const Payload *source, Alignment *res,
 		char *chars_comparision, double *weights) {
 
 	Alignment tmp;
@@ -83,7 +83,7 @@ __device__ Alignment* dev_find_offset(const Data *source, Alignment *res,
 
 }
 
-__global__ void find_optimum(Data *data, Alignment *results, char *chars_comparision,
+__global__ void find_optimum(Payload *data, Alignment *results, char *chars_comparision,
 		double *weights, int from) {
 	Alignment tmp;
 
@@ -130,7 +130,7 @@ void validate(cudaError_t err) {
 	}
 }
 
-Alignment* computeOnGPU(Data *data, Alignment *res, char *chars_comparision, double *weights, int from, int to) {
+Alignment* computeOnGPU(Payload *data, Alignment *res, char *chars_comparision, double *weights, int from, int to) {
 	omp_set_num_threads(THREADS);
 
 	Alignment tmp;
@@ -150,8 +150,8 @@ Alignment* computeOnGPU(Data *data, Alignment *res, char *chars_comparision, dou
 		copy(res, &results_array[i]);
 	}
 // Allocate memory on GPU for Source Alignment
-	Data *sourceGPU;
-	err = cudaMalloc((void**) &sourceGPU, sizeof(Data));
+	Payload *sourceGPU;
+	err = cudaMalloc((void**) &sourceGPU, sizeof(Payload));
 	validate(err);
 
 // Allocate memory on GPU for Results Alignments
@@ -166,11 +166,11 @@ Alignment* computeOnGPU(Data *data, Alignment *res, char *chars_comparision, dou
 
 // Allocate memory on GPU for weights array
 	double *weightsGPU;
-	err = cudaMalloc((void**) &weightsGPU, sizeof(double) * WEIGHTS);
+	err = cudaMalloc((void**) &weightsGPU, sizeof(double) * WEIGHTS_NUM);
 	validate(err);
 
 // Copy source from host to the GPU memory
-	err = cudaMemcpy(sourceGPU, data, sizeof(Data), cudaMemcpyHostToDevice);
+	err = cudaMemcpy(sourceGPU, data, sizeof(Payload), cudaMemcpyHostToDevice);
 	validate(err);
 
 // Copy result from host to the GPU memory
@@ -182,7 +182,7 @@ Alignment* computeOnGPU(Data *data, Alignment *res, char *chars_comparision, dou
 	validate(err);
 
 // Copy weights array from host to the GPU memory
-	err = cudaMemcpy(weightsGPU, weights, sizeof(double) * WEIGHTS,
+	err = cudaMemcpy(weightsGPU, weights, sizeof(double) * WEIGHTS_NUM,
 			cudaMemcpyHostToDevice);
 	validate(err);
 

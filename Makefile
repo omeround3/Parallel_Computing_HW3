@@ -11,7 +11,7 @@ clean:
 
 run:
 	@echo "Running Program - Sequence Alignment"
-	@mpiexec -np 2 ./runSAC
+	@mpiexec -np 2 ./runSAC < input.txt
 
 runOn2:
 	@echo "Running Program - Sequence Alignment - on 2 machines"
