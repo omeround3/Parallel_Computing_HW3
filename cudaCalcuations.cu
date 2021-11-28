@@ -30,6 +30,7 @@ __device__ Alignment* dev_copy(const Alignment *source, Alignment *dest) {
 	dest->char_idx = source->char_idx;
 	dest->char_val = source->char_val;
 	dest->alignment_score = source->alignment_score;
+	dest->max_score = source->max_score;
 	return dest;
 }
 
