@@ -81,6 +81,10 @@ int main(int argc, char *argv[]) {
 			strcpy(data[i].seq1, seq1);
 			fscanf(stdin, "%s", data[i].seq2);
 			data[i].len = strlen(data[i].seq2);
+			for (int j = 0; j < data[j].len; j++) {
+				if (data[i].seq2[j] >= 'a' && data[i].seq2[j] <= 'z')
+					data[i].seq2[j] = toupper(data[i].seq2[j]);
+			}
 			data[i].max_offset = strlen(seq1) - data[i].len;
 			res[i].char_idx = -1;
 			res[i].char_val = 0;
@@ -201,8 +205,9 @@ int main(int argc, char *argv[]) {
 	// 	free(data);
 	// 	free(res);
 	// }
-			free(data);
-		free(res);
+	free(data);
+	free(res);
+	
 	return 0;
 }
 
