@@ -92,8 +92,8 @@ int main(int argc, char *argv[]) {
 			res[i].alignment_score = 0;
 			res[i].max_score = strlen(data[i].seq2) * weights[0]; // stop if reached
 			// printf("In LOOP:: Payload %d | len %d\n",i+1, data[i].len);
-			compare(&data[i], &res[i]);
-			find_offset(&data[i], &res[i]);
+			// compare(&data[i], &res[i]);
+			// find_offset(&data[i], &res[i]);
 		}
 		// for (int i = 0; i < num_of_sequences; i++)
 		// {
@@ -102,45 +102,47 @@ int main(int argc, char *argv[]) {
 		// }
 	}
 	
-	// /* Defining MPI_TYPEs */
-	// Alignment tmp;
-	// Payload tmp2;
-	// MPI_Datatype AlignmentMPIType;
-	// MPI_Datatype a_types[5] = { MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT };
-	// int a_block_len[5] = { 1, 1, 1, 1, 1 };
-	// MPI_Aint disp[5];
-	// disp[0] = (char*) &tmp.offset - (char*) &tmp;
-	// disp[1] = (char*) &tmp.char_idx - (char*) &tmp;
-	// disp[2] = (char*) &tmp.char_val - (char*) &tmp;
-	// disp[3] = (char*) &tmp.alignment_score - (char*) &tmp;
-	// disp[4] = (char*) &tmp.max_score - (char*) &tmp;
-	// MPI_Type_create_struct(5, a_block_len, disp, a_types, &AlignmentMPIType);
-	// MPI_Type_commit(&AlignmentMPIType);
+	/* Defining MPI_TYPEs */
+	Alignment tmp;
+	MPI_Datatype AlignmentMPIType;
+	MPI_Datatype a_types[5] = { MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT };
+	int a_block_len[5] = { 1, 1, 1, 1, 1 };
+	MPI_Aint disp1[5];
+	disp1[0] = (char*) &tmp.offset - (char*) &tmp;
+	disp1[1] = (char*) &tmp.char_idx - (char*) &tmp;
+	disp1[2] = (char*) &tmp.char_val - (char*) &tmp;
+	disp1[3] = (char*) &tmp.alignment_score - (char*) &tmp;
+	disp1[4] = (char*) &tmp.max_score - (char*) &tmp;
+	MPI_Type_create_struct(5, a_block_len, disp1, a_types, &AlignmentMPIType);
+	MPI_Type_commit(&AlignmentMPIType);
 
-	// MPI_Datatype PayloadMPIType;
-	// MPI_Datatype d_types[4] = { MPI_CHAR, MPI_CHAR, MPI_INT, MPI_INT };
-	// int d_block_len[4] = { SEQ1_SIZE + 1, SEQ2_SIZE + 1, 1, 1 };
-	// disp[0] = (char*) &tmp2.seq1 - (char*) &tmp2;
-	// disp[1] = (char*) &tmp2.seq2 - (char*) &tmp2;
-	// disp[2] = (char*) &tmp2.len - (char*) &tmp2;
-	// disp[3] = (char*) &tmp2.max_offset - (char*) &tmp2;
-	// MPI_Type_create_struct(4, d_block_len, disp, d_types, &PayloadMPIType);
-	// MPI_Type_commit(&PayloadMPIType);
+	Payload tmp2;
+	MPI_Datatype PayloadMPIType;
+	MPI_Datatype d_types[4] = { MPI_CHAR, MPI_CHAR, MPI_INT, MPI_INT };
+	int d_block_len[4] = { SEQ1_SIZE + 1, SEQ2_SIZE + 1, 1, 1 };
+	MPI_Aint disp2[5];
+	disp2[0] = (char*) &tmp2.seq1 - (char*) &tmp2;
+	disp2[1] = (char*) &tmp2.seq2 - (char*) &tmp2;
+	disp2[2] = (char*) &tmp2.len - (char*) &tmp2;
+	disp2[3] = (char*) &tmp2.max_offset - (char*) &tmp2;
+	MPI_Type_create_struct(4, d_block_len, disp2, d_types, &PayloadMPIType);
+	MPI_Type_commit(&PayloadMPIType);
 
-	// if (process_rank == 0) {
-	// 	fprintf(stdout, "Process rank %d | Seq2: %s\n", process_rank, data[0].seq2);
-	// }
-/* 	Broadcasting data for all MPI's processes */
-	// MPI_Bcast(&data[0], 1, PayloadMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
+	/* 	Broadcasting data for all MPI's processes */
+	MPI_Bcast(&data, num_of_sequences, PayloadMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
 	// MPI_Bcast(&res, num_of_sequences, AlignmentMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
-	// MPI_Bcast(&max_val, 1, MPI_DOUBLE, MASTER_PROCESS, MPI_COMM_WORLD);
+	// // MPI_Bcast(&max_val, 1, MPI_DOUBLE, MASTER_PROCESS, MPI_COMM_WORLD);
 	// MPI_Bcast(&weights, WEIGHTS_NUM, MPI_LONG, MASTER_PROCESS, MPI_COMM_WORLD);
 	// MPI_Bcast(&chars_comparision, CHARS * CHARS, MPI_CHAR, MASTER_PROCESS, MPI_COMM_WORLD);
 
-	// for (int i = 0; i < num_of_sequences; i++)
-	// {
-		// printf("Process rank %d | Seq2: %s\n", process_rank, data[0].seq2);
-	// }
+	MPI_Barrier(MPI_COMM_WORLD);
+
+	if (process_rank != 0) {
+		for (int i = 0; i < num_of_sequences; i++) {
+			printf("Process rank %d | Seq2: %s\n", process_rank, data[i].seq2);
+			printf("Process rank %d | Score: %d\n", process_rank, res[i].alignment_score);
+		}
+	}
 	
 
 // // Calculate total process share
@@ -233,13 +235,13 @@ Alignment* find_offset(const Payload *source, Alignment *res) {
 	Alignment *tmp = (Alignment*) malloc(sizeof(Alignment));
 	tmp = copy(res, tmp);
 	printf("Max offset: %d\n", source->max_offset);
-	printf("In find offset:: BEFORE LOOP\n");
+	// printf("In find offset:: BEFORE LOOP\n");
 	for (int i = 0; i <= source->max_offset; ++i) {
 		tmp->offset = i;
 		compare(source, tmp);
 		compare_and_swap(tmp, res);
 	}
-	printf("In find offset:: EXIT LOOP\n");
+	// printf("In find offset:: EXIT LOOP\n");
 	free(tmp);
 	return res;
 
