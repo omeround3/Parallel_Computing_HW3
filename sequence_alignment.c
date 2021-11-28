@@ -16,232 +16,116 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <time.h>
 
-#include "mpi.h"
 
 #include "sequence_alignment.h"
 
 /* Strings group declaration */
-char first_type_groups[CONSRV_SIZE][STR_LEN] = {"NDEQ", "MILV", "FYW", "NEQK", "QHRK", "HY", "STA", "NHQK", "MILF"};
+char first_type_groups[FIRST_TYPE_GROUP_SIZE][STR_LEN] = {"NDEQ", "MILV", "FYW", "NEQK", "QHRK", "HY", "STA", "NHQK", "MILF"};
 
-char second_type_groups[SEMI_CONSRV_SIZE][STR_LEN] = {"SAG", "SGND", "NEQHRK", "HFY", "ATV", "STPA", "NDEQHK", "FVLIM", "CSA", "STNK", "SNDEQK"};
+char second_type_groups[SECOND_TYPE_GROUP_SIZE][STR_LEN] = {"SAG", "SGND", "NEQHRK", "HFY", "ATV", "STPA", "NDEQHK", "FVLIM", "CSA", "STNK", "SNDEQK"};
 
-double max_val;
+
 int weights[WEIGHTS_NUM];
 /* table for storing characters comparision answers */
 char chars_comparision[CHARS][CHARS];
 
 int main(int argc, char *argv[]) {
-	int i, num_of_sequences;
-	int procceses_amount;	/* number of processes*/
-	int process_rank;	/* process rank (process ID) */
-	int job_share_size, job_remainder, job_offset;	/* process job share size & remainder */
-	int m_share, m_remainder;	/* method share size & remainder */
-	int omp_from, omp_to;
-	int cuda_from, cuda_to;
-	// Alignment res_arr[THREADS];
+	fprintf(stdout, "Alignment Sequence Algorithm is running...\n");
 
-	MPI_Status status; /* return status for receive */
-	// omp_set_num_threads(THREADS);
+	int num_of_sequences;
 	
-	MPI_Init(&argc, &argv);	/* MPI Intialization */
-	MPI_Comm_rank(MPI_COMM_WORLD, &process_rank); /* Get process rank */
-	MPI_Comm_size(MPI_COMM_WORLD, &procceses_amount); /* Get number of processes */
-
-	double start = MPI_Wtime();
+	clock_t start, end;
+	double cpu_time_used;
 
 	Payload *data;
 	Alignment *res;
 
-	/* Only the master process handles the input and data initalization */
-	if (process_rank == 0) {
-		build_table();
-		// get_data(data, res, &num_of_sequences);
-		
-		char seq1[SEQ1_SIZE];
+	start = clock();
 
-		/* Get input from stdin */
-		fscanf(stdin, "%d %d %d %d", &weights[0], &weights[1], &weights[2],
-			&weights[3]);
-		/* Get sequence 1 and convert to uppercase */
-		fscanf(stdin, "%s", seq1);
-		for (int i = 0; i < strlen(seq1); i++) {
-			if (seq1[i] >= 'a' && seq1[i] <= 'z')
-				seq1[i] = toupper(seq1[i]);
+	/* Handle the input and data initalization */
+	build_table();
+
+	/* Get input from stdin */
+	char seq1[SEQ1_SIZE];
+	fscanf(stdin, "%d %d %d %d", &weights[0], &weights[1], &weights[2],
+		&weights[3]);
+	/* Get sequence 1 and convert to uppercase */
+	fscanf(stdin, "%s", seq1);
+	for (int i = 0; i < strlen(seq1); i++) {
+		if (seq1[i] >= 'a' && seq1[i] <= 'z')
+			seq1[i] = toupper(seq1[i]);
+	}
+	fscanf(stdin, "%d", &num_of_sequences);
+	data = (Payload *)malloc(sizeof(Payload) * num_of_sequences);
+	res = (Alignment *)malloc(sizeof(Alignment) * num_of_sequences);
+	for (int i = 0; i < num_of_sequences; i++)
+	{
+		// data[i].seq1 = strdup(seq1);
+		strcpy(data[i].seq1, seq1);
+		fscanf(stdin, "%s", data[i].seq2);
+		data[i].len = strlen(data[i].seq2);
+		for (int j = 0; j < data[j].len; j++) {
+			if (data[i].seq2[j] >= 'a' && data[i].seq2[j] <= 'z')
+				data[i].seq2[j] = toupper(data[i].seq2[j]);
 		}
+		data[i].max_offset = strlen(seq1) - data[i].len;
+		res[i].hyphen_idx = 0;
+		res[i].offset = 0;
+		res[i].alignment_score = 0;
+		res[i].max_score = strlen(data[i].seq2) * weights[0]; // stop if reached
 
-		fscanf(stdin, "%d", &num_of_sequences);
-		data = (Payload *)malloc(sizeof(Payload) * num_of_sequences);
-		res = (Alignment *)malloc(sizeof(Alignment) * num_of_sequences);
-
-		for (int i = 0; i < num_of_sequences; i++)
-		{
-			printf("-----------In get data::iteration %d-----------\n", i+1);
-			// data[i].seq1 = strdup(seq1);
-			strcpy(data[i].seq1, seq1);
-			fscanf(stdin, "%s", data[i].seq2);
-			data[i].len = strlen(data[i].seq2);
-			for (int j = 0; j < data[j].len; j++) {
-				if (data[i].seq2[j] >= 'a' && data[i].seq2[j] <= 'z')
-					data[i].seq2[j] = toupper(data[i].seq2[j]);
-			}
-			data[i].max_offset = strlen(seq1) - data[i].len;
-			res[i].char_idx = -1;
-			res[i].char_val = 0;
-			res[i].offset = 0;
-			res[i].alignment_score = 0;
-			res[i].max_score = strlen(data[i].seq2) * weights[0]; // stop if reached
-			// printf("In LOOP:: Payload %d | len %d\n",i+1, data[i].len);
-			// compare(&data[i], &res[i]);
-			// find_offset(&data[i], &res[i]);
-		}
-		// for (int i = 0; i < num_of_sequences; i++)
-		// {
-		// 	printf("Payload %d | len %d\n",i+1, data[i].len);
-		// 	printf("Alignment %d | alignment score: %d | offset: %d\n",i+1, res[i].alignment_score, res[i].offset);
-		// }
 	}
 	
-	/* Defining MPI_TYPEs */
-	Alignment tmp;
-	MPI_Datatype AlignmentMPIType;
-	MPI_Datatype a_types[5] = { MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT };
-	int a_block_len[5] = { 1, 1, 1, 1, 1 };
-	MPI_Aint disp1[5];
-	disp1[0] = (char*) &tmp.offset - (char*) &tmp;
-	disp1[1] = (char*) &tmp.char_idx - (char*) &tmp;
-	disp1[2] = (char*) &tmp.char_val - (char*) &tmp;
-	disp1[3] = (char*) &tmp.alignment_score - (char*) &tmp;
-	disp1[4] = (char*) &tmp.max_score - (char*) &tmp;
-	MPI_Type_create_struct(5, a_block_len, disp1, a_types, &AlignmentMPIType);
-	MPI_Type_commit(&AlignmentMPIType);
-
-	Payload tmp2;
-	MPI_Datatype PayloadMPIType;
-	MPI_Datatype d_types[4] = { MPI_CHAR, MPI_CHAR, MPI_INT, MPI_INT };
-	int d_block_len[4] = { SEQ1_SIZE + 1, SEQ2_SIZE + 1, 1, 1 };
-	MPI_Aint disp2[5];
-	disp2[0] = (char*) &tmp2.seq1 - (char*) &tmp2;
-	disp2[1] = (char*) &tmp2.seq2 - (char*) &tmp2;
-	disp2[2] = (char*) &tmp2.len - (char*) &tmp2;
-	disp2[3] = (char*) &tmp2.max_offset - (char*) &tmp2;
-	MPI_Type_create_struct(4, d_block_len, disp2, d_types, &PayloadMPIType);
-	MPI_Type_commit(&PayloadMPIType);
-
-	/* 	Broadcasting data for all MPI's processes */
-	MPI_Bcast(&data, num_of_sequences, PayloadMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
-	// MPI_Bcast(&res, num_of_sequences, AlignmentMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
-	// // MPI_Bcast(&max_val, 1, MPI_DOUBLE, MASTER_PROCESS, MPI_COMM_WORLD);
-	// MPI_Bcast(&weights, WEIGHTS_NUM, MPI_LONG, MASTER_PROCESS, MPI_COMM_WORLD);
-	// MPI_Bcast(&chars_comparision, CHARS * CHARS, MPI_CHAR, MASTER_PROCESS, MPI_COMM_WORLD);
-
-	// MPI_Barrier(MPI_COMM_WORLD);
-
-	if (process_rank != 0) {
-		for (int i = 0; i < num_of_sequences; i++) {
-			printf("Process rank %d | Seq2: %s\n", process_rank, data[i].seq2);
-			printf("Process rank %d | Score: %d\n", process_rank, res[i].alignment_score);
-		}
+	/* Calcuate optimal offset (n) and mutant (k) */
+	for (int i = 0; i < num_of_sequences; i++) {
+		find_optimal_offset(&data[i], &res[i]);
 	}
 	
+	/* Time taken for program */
+	end = clock();
+	cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+	/* Print results */
+	fprintf(stdout, "Execution time is: %lf\n", cpu_time_used);
+	results_output(res, num_of_sequences);
 
-// // Calculate total process share
-// 	job_share_size = data.len / procceses_amount;
-// 	job_remainder = data.len % procceses_amount;0
-// 	job_offset = process_rank * job_share_size;
-
-// // Calculate omp/CUDA (method) share
-// 	m_share = job_share_size / 2;
-// 	m_remainder = job_share_size % procceses_amount;
-
-// // Set start/end points
-// 	omp_from = job_offset;
-// 	omp_to = job_offset + m_share;
-// 	cuda_from = omp_to;
-// 	if (process_rank != (procceses_amount - 1))
-// 		cuda_to = job_offset + 2 * m_share + m_remainder;
-// 	else
-// 		cuda_to = job_offset + 2 * m_share + m_remainder + job_remainder;
-
-// // Initialize res_arr
-// 	for (i = 0; i < THREADS; ++i) {
-// 		copy(&res, &res_arr[i]);
-// 	}
-
-// // CUDA function
-// 	computeOnGPU(&data, &res, *chars_comparision, weights, cuda_from, cuda_to);
-
-// // Each thread will replace from-to chars and will find optimal offset
-// 	omp_set_num_threads(THREADS);
-// #pragma omp parallel for private(i)
-// 	for (i = omp_from; i < omp_to; i++) {
-// 		find_mutants(&data, &res_arr[omp_get_thread_num()], i);
-// 	}
-
-// // Find optimal res in threads results
-// 	for (i = 0; i < THREADS; ++i) {
-// 		compare_and_swap(&res_arr[i], &res);
-// 	}
-
-// // Get results from processes, compare and swap if needed
-// 	if (process_rank != 0) {
-// 		MPI_Send(&res, 1, AlignmentMPIType, 0, 0, MPI_COMM_WORLD);
-// 	} else {
-// 		for (int process = 0; process < procceses_amount - 1; ++process) {
-// 			MPI_Recv(&tmp, 1, AlignmentMPIType, MPI_ANY_SOURCE, 0,
-// 			MPI_COMM_WORLD, &status);
-// 			compare_and_swap(&tmp, &res);;
-// 		}
-// 		double end = MPI_Wtime();
-// 		printf("Execution time is %f\n", end - start ); 
-// 		output_print(&data, &res, output);
-// 	}
-// 	MPI_Finalize();
-
-	// for (int i = 0; i < num_of_sequences; i++)
-	// {
-	// 	free(data[i]);
-	// 	free(res[i]);
-	// }
-	// if (process_rank == 0) {
-	// 	free(data);
-	// 	free(res);
-	// }
 	free(data);
 	free(res);
 	
 	return 0;
 }
 
-Alignment* find_mutants(const Payload *source, Alignment *res, int idx) {
+Alignment* find_optimal_mutant(const Payload *source, Alignment *res, int idx) {
 	Alignment *tmp = (Alignment*) malloc(sizeof(Alignment));
-	tmp->char_idx = idx;
-
-	int c1 = source->seq2[idx] - 'A';
-	for (int i = 1; i < CHARS && not_opt(res); ++i) {
-		if (chars_comparision[c1][(c1 + i) % CHARS] != '%') {
-			tmp->char_val = (c1 + i) % CHARS;
-			find_offset(source, tmp);
-			compare_and_swap(tmp, res);
-		}
-	}
+	tmp->hyphen_idx = idx;
+	compare(source, tmp);
+	compare_and_swap(tmp, res);
 
 	free(tmp);
 	return res;
 }
 
-Alignment* find_offset(const Payload *source, Alignment *res) {
+Alignment* find_optimal_offset(const Payload *source, Alignment *res) {
 
 	Alignment *tmp = (Alignment*) malloc(sizeof(Alignment));
 	tmp = copy(res, tmp);
-	printf("Max offset: %d\n", source->max_offset);
-	// printf("In find offset:: BEFORE LOOP\n");
-	for (int i = 0; i <= source->max_offset; ++i) {
+	compare(source, res);
+	for (int j = 1; j < source->len; ++j) {	
+		res->hyphen_idx = j;
+		compare(source, res);
+	}	
+	for (int i = 1; i <= source->max_offset - 1; ++i) {
 		tmp->offset = i;
-		compare(source, tmp);
+		/* for each offset find optimal mutant */
+		for (int j = 1; j < source->len; ++j) {	
+			// tmp = find_optimal_mutant(source, tmp, j);
+			tmp->hyphen_idx = j;
+			compare(source, tmp);
+			compare_and_swap(tmp, res);
+		}	
 		compare_and_swap(tmp, res);
 	}
-	// printf("In find offset:: EXIT LOOP\n");
 	free(tmp);
 	return res;
 
@@ -261,8 +145,7 @@ int not_opt(Alignment *a) {
 
 Alignment* copy(const Alignment *source, Alignment *dest) {
 	dest->offset = source->offset;
-	dest->char_idx = source->char_idx;
-	dest->char_val = source->char_val;
+	dest->hyphen_idx = source->hyphen_idx;
 	dest->alignment_score = source->alignment_score;
 	dest->max_score = source->max_score;
 	return dest;
@@ -273,18 +156,19 @@ The functions compares characters between the 2 sequences in the Payload,
 and calculates the alignment score for a sequence #2
 */
 void compare(const Payload *d, Alignment *a) {
-	int c1, c2;
+	int seq1_char, seq2_char;
 	a->alignment_score = 0;
-	// printf("In compare::BEFORE LOOP\t");
-	for (int chr_ofst = 0; chr_ofst < d->len; ++chr_ofst) {
-		// printf("In compare:: chr_offset: %d | c1: %c: ", chr_ofst, d->seq1[chr_ofst + a->offset]);
-		c1 = d->seq1[chr_ofst + a->offset] - 'A';	/* Convert char to ABC order index */
-		if (chr_ofst == a->char_idx) {
-			c2 = a->char_val;
-		} else {
-			c2 = d->seq2[chr_ofst] - 'A';
+	for (int char_index = 0; char_index < d->len; ++char_index) {
+		/* Convert char to ABC order index */
+		if (char_index == a->hyphen_idx) {
+			seq1_char = d->seq1[char_index + 1 + a->offset] - 'A';	/* skip character if index is hyphen */
 		}
-		switch (chars_comparision[c1][c2]) {
+		else {
+			seq1_char = d->seq1[char_index + a->offset] - 'A';
+		}
+		seq2_char = d->seq2[char_index] - 'A';
+		/* check sign of characters */
+		switch (chars_comparision[seq1_char][seq2_char]) {
 			case '$':
 				a->alignment_score += weights[0];
 				break;
@@ -299,8 +183,6 @@ void compare(const Payload *d, Alignment *a) {
 				break;
 		}
 	}
-	// printf("In compare::AFTER LOOP\t");
-	// return a;
 }
 
 void get_data(Payload *data, Alignment *res, int *num_of_sequences)
@@ -330,8 +212,7 @@ void get_data(Payload *data, Alignment *res, int *num_of_sequences)
 		fscanf(stdin, "%s", data[i].seq2);
 		data[i].len = strlen(data[i].seq2);
 		data[i].max_offset = strlen(seq1) - data[i].len;
-		res[i].char_idx = -1;
-		res[i].char_val = 0;
+		res[i].hyphen_idx = -1;
 		res[i].offset = 0;
 		res[i].max_score = strlen(data->seq2) * weights[0]; // stop if reached
 		printf("In get data:: Payload %d | len %d | seq2: %s\n",i+1, data[i].len, data[i].seq2);
@@ -355,12 +236,12 @@ void build_table() {
 	}
 	
 	/* Fill first type groups characters */
-	for (int i = 0; i < CONSRV_SIZE; ++i) {
+	for (int i = 0; i < FIRST_TYPE_GROUP_SIZE; ++i) {
 		insert_string(first_type_groups[i], '%');
 	}
 
 	/* Fill second type groups characters */
-	for (int i = 0; i < SEMI_CONSRV_SIZE; ++i) {
+	for (int i = 0; i < SECOND_TYPE_GROUP_SIZE; ++i) {
 		insert_string(second_type_groups[i], '#');
 	}
 }
@@ -380,12 +261,9 @@ void insert_string(const char *str, const char sign) {
 	}
 }
 
-void output_print(Payload *data, Alignment *res) {
-	char str[SEQ2_SIZE + 1];
-	char* hyphen_pos;
-	strcpy(str, data->seq2);
-	if (res->char_idx != -1)
-		str[res->char_idx] = 'A' + res->char_val;
-	fprintf(stdout, "%s\n",str);
-	fprintf(stdout,"%d %d",res->offset,res->alignment_score);
+void results_output(Alignment *res, int num_sequences) {
+	fprintf(stdout, "The number of sequences in the input is: %d\n", num_sequences);
+	for (int i = 0; i < num_sequences; ++i) {
+		fprintf(stdout, "Sequence #%d | optimal offset(n): %d | optimal hyphen index(k): %d | alignment score: %d\n", i + 1, res[i].offset, res[i].hyphen_idx, res[i].alignment_score);
+	}	
 }
