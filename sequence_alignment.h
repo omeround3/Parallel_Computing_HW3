@@ -29,6 +29,7 @@ typedef struct Alignments {
 	int char_idx;
 	int char_val;
 	int alignment_score;
+	int max_score;
 } Alignment;
 
 int not_opt(Alignment *a);

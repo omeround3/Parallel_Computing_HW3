@@ -31,7 +31,6 @@ int weights[WEIGHTS_NUM];
 char chars_comparision[CHARS][CHARS];
 
 int main(int argc, char *argv[]) {
-	omp_set_num_threads(THREADS);
 	int i, num_of_sequences;
 	int procceses_amount;	/* number of processes*/
 	int process_rank;	/* process rank (process ID) */
@@ -43,7 +42,7 @@ int main(int argc, char *argv[]) {
 	Alignment tmp;
 	Payload tmp2;
 	MPI_Status status; /* return status for receive */
-
+	// omp_set_num_threads(THREADS);
 	
 	MPI_Init(&argc, &argv);	/* MPI Intialization */
 	MPI_Comm_rank(MPI_COMM_WORLD, &process_rank); /* Get process rank */
@@ -58,18 +57,19 @@ int main(int argc, char *argv[]) {
 	if (process_rank == 0) {
 		build_table();
 		get_data(data, res, &num_of_sequences);
-		printf("Process rank %d | Seq2: %s\n", process_rank, data[0].seq2);
+		printf("Line 61\n");
 	}
 	/* Defining MPI_TYPEs */
 	MPI_Datatype AlignmentMPIType;
-	MPI_Datatype a_types[4] = { MPI_INT, MPI_INT, MPI_INT, MPI_INT };
-	int a_block_len[4] = { 1, 1, 1, 1 };
-	MPI_Aint disp[4];
+	MPI_Datatype a_types[5] = { MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT };
+	int a_block_len[5] = { 1, 1, 1, 1, 1 };
+	MPI_Aint disp[5];
 	disp[0] = (char*) &tmp.offset - (char*) &tmp;
 	disp[1] = (char*) &tmp.char_idx - (char*) &tmp;
 	disp[2] = (char*) &tmp.char_val - (char*) &tmp;
 	disp[3] = (char*) &tmp.alignment_score - (char*) &tmp;
-	MPI_Type_create_struct(4, a_block_len, disp, a_types, &AlignmentMPIType);
+	disp[4] = (char*) &tmp.max_score - (char*) &tmp;
+	MPI_Type_create_struct(5, a_block_len, disp, a_types, &AlignmentMPIType);
 	MPI_Type_commit(&AlignmentMPIType);
 
 	MPI_Datatype PayloadMPIType;
@@ -82,7 +82,9 @@ int main(int argc, char *argv[]) {
 	MPI_Type_create_struct(4, d_block_len, disp, d_types, &PayloadMPIType);
 	MPI_Type_commit(&PayloadMPIType);
 
-	
+	if (process_rank == 0) {
+		fprintf(stdout, "Process rank %d | Seq2: %s\n", process_rank, data[0].seq2);
+	}
 /* 	Broadcasting data for all MPI's processes */
 	// MPI_Bcast(&data[0], 1, PayloadMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
 	// MPI_Bcast(&res, num_of_sequences, AlignmentMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
@@ -174,11 +176,15 @@ Alignment* find_offset(const Payload *source, Alignment *res) {
 	Alignment *tmp = (Alignment*) malloc(sizeof(Alignment));
 	tmp = copy(res, tmp);
 
+	printf("Max offset: %d\n", source->max_offset);
+	printf("Max Score: %d\n", res->max_score);
 	for (int i = 0; i <= source->max_offset && not_opt(res); ++i) {
+		printf("In find offset:: iteration %d\n", i);
 		tmp->offset = i;
-		compare(source, tmp);
-		compare_and_swap(tmp, res);
+		// compare(source, tmp);
+		// compare_and_swap(tmp, res);
 	}
+	printf("In find offeset:: EXIT LOOP\n");
 	free(tmp);
 	return res;
 
@@ -193,14 +199,16 @@ Alignment* compare_and_swap(const Alignment *a1, Alignment *a2) {
 }
 
 int not_opt(Alignment *a) {
-	return !(a->alignment_score == max_val);
+	// printf("Not Opt Value: %d\n", !(a->alignment_score == a->max_score));
+	return !(a->alignment_score == a->max_score);
 }
 
 Alignment* copy(const Alignment *source, Alignment *dest) {
 	dest->offset = source->offset;
-	dest->alignment_score = source->alignment_score;
 	dest->char_idx = source->char_idx;
 	dest->char_val = source->char_val;
+	dest->alignment_score = source->alignment_score;
+	dest->max_score = source->max_score;
 	return dest;
 }
 
@@ -248,12 +256,13 @@ void get_data(Payload *data, Alignment *res, int *num_of_sequences)
 	fscanf(stdin, "%s", seq1);
 	fscanf(stdin, "%d", num_of_sequences);
 	int seq_amount = *num_of_sequences;
-
 	data = (Payload *)malloc(sizeof(Payload) * seq_amount);
 	res = (Alignment *)malloc(sizeof(Alignment) * seq_amount);
+
 	for (int i = 0; i < seq_amount; i++)
 	{
 		// data[i].seq1 = strdup(seq1);
+		printf("Line 258\n");
 		strcpy(data[i].seq1, seq1);
 		fscanf(stdin, "%s", data[i].seq2);
 		data[i].len = strlen(data[i].seq2);
@@ -261,10 +270,14 @@ void get_data(Payload *data, Alignment *res, int *num_of_sequences)
 		res[i].char_idx = -1;
 		res[i].char_val = 0;
 		res[i].offset = 0;
+		res[i].max_score = strlen(data->seq2) * weights[0]; // stop if reached
 		compare(&data[i], &res[i]);
 		find_offset(&data[i], &res[i]);
+		
+		fprintf(stdout,"Data %d | Seq 2: %s\n",i,data[i].seq2);
+		fprintf(stdout,"Data %d | AS: %d\n",i+1, res[i].alignment_score);
 	}
-	max_val = strlen(data->seq2) * weights[0]; // stop if reached
+	
 }
 
 /* 
