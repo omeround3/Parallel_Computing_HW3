@@ -11,6 +11,7 @@
 #define SECOND_TYPE_GROUP_SIZE 11
 #define SEQ1_SIZE 3000
 #define SEQ2_SIZE 2000
+#define GROUPS_STRINGS_SIZE 10
 
 typedef struct Payload {
 	char seq1[SEQ1_SIZE + 1];

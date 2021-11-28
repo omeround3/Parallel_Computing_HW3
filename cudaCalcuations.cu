@@ -27,7 +27,7 @@ __device__ char* dev_strcpy(char *dest, char *source) {
 
 __device__ Alignment* dev_copy(const Alignment *source, Alignment *dest) {
 	dest->offset = source->offset;
-	dest->char_idx = source->char_idx;
+	dest->hyphen_idx = source->hyphen_idx;
 	dest->char_val = source->char_val;
 	dest->alignment_score = source->alignment_score;
 	dest->max_score = source->max_score;
@@ -40,7 +40,7 @@ __device__ Alignment* dev_compare(const Payload *d, Alignment *a, char *chars_co
 	a->alignment_score = 0;
 	for (int chr_ofst = 0; chr_ofst < d->len; ++chr_ofst) {
 		c1 = d->seq1[chr_ofst + a->offset] - 'A';
-		if (chr_ofst == a->char_idx) {
+		if (chr_ofst == a->hyphen_idx) {
 			c2 = a->char_val;
 		} else {
 			c2 = d->seq2[chr_ofst] - 'A';
@@ -92,7 +92,7 @@ __global__ void find_optimum(Payload *data, Alignment *results, char *chars_comp
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
 // Each block will be responsible to an idx in seq2
-	int char_idx = from + blockIdx.x;
+	int hyphen_idx = from + blockIdx.x;
 
 // Each thread in block will replace to a different char (CHARS threads in total)
 	int new_chr = threadIdx.x;
@@ -101,10 +101,10 @@ __global__ void find_optimum(Payload *data, Alignment *results, char *chars_comp
 	dev_copy(&results[idx], &tmp);
 
 // Set char to replace
-	tmp.char_idx = char_idx;
+	tmp.hyphen_idx = hyphen_idx;
 
 // Set target char (if possible to replace)
-	int c1 = data->seq2[char_idx] - 'A';
+	int c1 = data->seq2[hyphen_idx] - 'A';
 	char sign = chars_comparision[c1 * CHARS + new_chr];
 	if (sign != '%' && sign != '$') {
 		tmp.char_val = new_chr;

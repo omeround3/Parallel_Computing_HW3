@@ -22,9 +22,9 @@
 #include "sequence_alignment.h"
 
 /* Strings group declaration */
-char first_type_groups[FIRST_TYPE_GROUP_SIZE][STR_LEN] = {"NDEQ", "MILV", "FYW", "NEQK", "QHRK", "HY", "STA", "NHQK", "MILF"};
+char first_type_groups[FIRST_TYPE_GROUP_SIZE][GROUPS_STRINGS_SIZE] = {"NDEQ", "MILV", "FYW", "NEQK", "QHRK", "HY", "STA", "NHQK", "MILF"};
 
-char second_type_groups[SECOND_TYPE_GROUP_SIZE][STR_LEN] = {"SAG", "SGND", "NEQHRK", "HFY", "ATV", "STPA", "NDEQHK", "FVLIM", "CSA", "STNK", "SNDEQK"};
+char second_type_groups[SECOND_TYPE_GROUP_SIZE][GROUPS_STRINGS_SIZE] = {"SAG", "SGND", "NEQHRK", "HFY", "ATV", "STPA", "NDEQHK", "FVLIM", "CSA", "STNK", "SNDEQK"};
 
 
 int weights[WEIGHTS_NUM];
