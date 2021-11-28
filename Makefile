@@ -3,7 +3,7 @@ build:
 
 	@mpicxx -fopenmp -c sequence_alignment.c -o sequence_alignment.o
 	@nvcc -I./inc -Xcompiler -fopenmp -c cudaCalcuations.cu -o cudaCalcuations.o
-	@mpicxx -fopenmp -o runSAC sequence_alignment.o cudaCalcuations.o  /usr/local/cuda-11.0/targets/x86_64-linux/lib/libcudart_static.a -ldl -lrt
+	@mpicxx -fopenmp -o runSAC sequence_alignment.o cudaCalcuations.o  /usr/local/cuda-10/targets/aarch64-linux/lib/libcudart_static.a -ldl -lrt
 
 clean:
 	@echo "Cleaning compilation files"

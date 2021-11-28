@@ -135,7 +135,7 @@ int main(int argc, char *argv[]) {
 	// MPI_Bcast(&weights, WEIGHTS_NUM, MPI_LONG, MASTER_PROCESS, MPI_COMM_WORLD);
 	// MPI_Bcast(&chars_comparision, CHARS * CHARS, MPI_CHAR, MASTER_PROCESS, MPI_COMM_WORLD);
 
-	MPI_Barrier(MPI_COMM_WORLD);
+	// MPI_Barrier(MPI_COMM_WORLD);
 
 	if (process_rank != 0) {
 		for (int i = 0; i < num_of_sequences; i++) {
