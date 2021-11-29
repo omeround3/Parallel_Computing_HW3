@@ -25,7 +25,7 @@ __device__ char* dev_strcpy(char *dest, char *source) {
 	return ptr;
 }
 
-__device__ Alignment* dev_copy(const Alignment *source, Alignment *dest) {
+__device__ Score* dev_copy(const Score *source, Score *dest) {
 	dest->offset = source->offset;
 	dest->hyphen_idx = source->hyphen_idx;
 	dest->char_val = source->char_val;
@@ -34,7 +34,7 @@ __device__ Alignment* dev_copy(const Alignment *source, Alignment *dest) {
 	return dest;
 }
 
-__device__ Alignment* dev_compare(const Payload *d, Alignment *a, char *chars_comparision,
+__device__ Score* dev_compare(const Payload *d, Score *a, char *chars_comparision,
 		double *weights) {
 	int c1, c2;
 	a->alignment_score = 0;
@@ -63,16 +63,16 @@ __device__ Alignment* dev_compare(const Payload *d, Alignment *a, char *chars_co
 	return a;
 }
 
-__device__ Alignment* dev_compare_and_swap(const Alignment *a1, Alignment *a2) {
+__device__ Score* dev_compare_and_swap(const Score *a1, Score *a2) {
 	if (a1->alignment_score > a2->alignment_score) {
 		dev_copy(a1, a2);
 	}
 	return a2;
 }
-__device__ Alignment* dev_find_offset(const Payload *source, Alignment *res,
+__device__ Score* dev_find_offset(const Payload *source, Score *res,
 		char *chars_comparision, double *weights) {
 
-	Alignment tmp;
+	Score tmp;
 	dev_copy(res, &tmp);
 
 	for (int i = 1; i <= source->max_offset; ++i) {
@@ -84,9 +84,9 @@ __device__ Alignment* dev_find_offset(const Payload *source, Alignment *res,
 
 }
 
-__global__ void find_optimum(Payload *data, Alignment *results, char *chars_comparision,
+__global__ void find_optimum(Payload *data, Score *results, char *chars_comparision,
 		double *weights, int from) {
-	Alignment tmp;
+	Score tmp;
 
 // Each thread will write to element idx
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -131,32 +131,32 @@ void validate(cudaError_t err) {
 	}
 }
 
-Alignment* computeOnGPU(Payload *data, Alignment *res, char *chars_comparision, double *weights, int from, int to) {
+Score* computeOnGPU(Payload *data, Score *res, char *chars_comparision, double *weights, int from, int to) {
 	omp_set_num_threads(THREADS);
 
-	Alignment tmp;
-	copy(res, &tmp);
+	Score tmp;
+	deep_copy_score(res, &tmp);
 
 	int share = to - from;
-	size_t size = sizeof(Alignment) * share * CHARS;
+	size_t size = sizeof(Score) * share * CHARS;
 	size_t num_of_res = share * CHARS;
 
 // Error code to check return values for CUDA calls
 	cudaError_t err = cudaSuccess;
 
 // Allocate results array
-	Alignment *results_array = (Alignment*) malloc(size);
+	Score *results_array = (Score*) malloc(size);
 #pragma omp parallel for
 	for (int i = 0; i < num_of_res; ++i) {
-		copy(res, &results_array[i]);
+		deep_copy_score(res, &results_array[i]);
 	}
-// Allocate memory on GPU for Source Alignment
+// Allocate memory on GPU for Source Score
 	Payload *sourceGPU;
 	err = cudaMalloc((void**) &sourceGPU, sizeof(Payload));
 	validate(err);
 
 // Allocate memory on GPU for Results Alignments
-	Alignment *resultsGPU;
+	Score *resultsGPU;
 	err = cudaMalloc((void**) &resultsGPU, size);
 	validate(err);
 
@@ -204,11 +204,11 @@ Alignment* computeOnGPU(Payload *data, Alignment *res, char *chars_comparision, 
 		from = t_num * share;
 		to = t_num != THREADS - 1 ? (t_num + 1) * share : num_of_res;
 		for (int i = from; i < to; ++i) {
-			compare_and_swap(&results_array[i], &tmp);
+			compare_scores_and_swap(&results_array[i], &tmp);
 		}
 #pragma omp critical
 		{
-			compare_and_swap(&tmp, res);
+			compare_scores_and_swap(&tmp, res);
 		}
 	}
 

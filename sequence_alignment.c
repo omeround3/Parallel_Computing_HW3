@@ -40,7 +40,7 @@ int main(int argc, char *argv[]) {
 	double cpu_time_used;
 
 	Payload *data;
-	Alignment *res;
+	Score *scores;
 
 	start = clock();
 
@@ -59,7 +59,7 @@ int main(int argc, char *argv[]) {
 	}
 	fscanf(stdin, "%d", &num_of_sequences);
 	data = (Payload *)malloc(sizeof(Payload) * num_of_sequences);
-	res = (Alignment *)malloc(sizeof(Alignment) * num_of_sequences);
+	scores = (Score *)malloc(sizeof(Score) * num_of_sequences);
 	for (int i = 0; i < num_of_sequences; i++)
 	{
 		// data[i].seq1 = strdup(seq1);
@@ -71,16 +71,16 @@ int main(int argc, char *argv[]) {
 				data[i].seq2[j] = toupper(data[i].seq2[j]);
 		}
 		data[i].max_offset = strlen(seq1) - data[i].len;
-		res[i].hyphen_idx = 0;
-		res[i].offset = 0;
-		res[i].alignment_score = 0;
-		res[i].max_score = strlen(data[i].seq2) * weights[0]; // stop if reached
+		scores[i].hyphen_idx = 0;
+		scores[i].offset = 0;
+		scores[i].alignment_score = 0;
+		scores[i].max_score = strlen(data[i].seq2) * weights[0]; // stop if reached
 
 	}
 	
 	/* Calcuate optimal offset (n) and mutant (k) */
 	for (int i = 0; i < num_of_sequences; i++) {
-		find_optimal_offset(&data[i], &res[i]);
+		find_optimal_offset(&data[i], &scores[i]);
 	}
 	
 	/* Time taken for program */
@@ -88,62 +88,71 @@ int main(int argc, char *argv[]) {
 	cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
 	/* Print results */
 	fprintf(stdout, "Execution time is: %lf\n", cpu_time_used);
-	results_output(res, num_of_sequences);
+	results_output(scores, num_of_sequences);
 
 	free(data);
-	free(res);
+	free(scores);
 	
 	return 0;
 }
 
-Alignment* find_optimal_mutant(const Payload *source, Alignment *res, int idx) {
-	Alignment *tmp = (Alignment*) malloc(sizeof(Alignment));
+Score* find_optimal_mutant(const Payload *source, Score *scores, int idx) {
+	Score *tmp = (Score*) malloc(sizeof(Score));
 	tmp->hyphen_idx = idx;
 	compare(source, tmp);
-	compare_and_swap(tmp, res);
+	compare_scores_and_swap(tmp, scores);
 
 	free(tmp);
-	return res;
+	return scores;
 }
 
-Alignment* find_optimal_offset(const Payload *source, Alignment *res) {
+Score* find_optimal_offset(const Payload *source, Score *score) {
 
-	Alignment *tmp = (Alignment*) malloc(sizeof(Alignment));
-	tmp = copy(res, tmp);
-	compare(source, res);
-	for (int j = 1; j < source->len; ++j) {	
-		res->hyphen_idx = j;
-		compare(source, res);
+	Score *tmp = (Score*) malloc(sizeof(Score));
+	tmp = deep_copy_score(score, tmp);
+
+	compare(source, score); /* hyphen_idx = 0 -> means the hyphen is at the end of ths string (e.g. ABC-) */
+
+	for (int j = 1; j < source->len && is_score_optimized(score); ++j) {	
+		score->hyphen_idx = j;
+		compare(source, tmp);
+		compare_scores_and_swap(tmp, score);
 	}	
-	for (int i = 1; i <= source->max_offset - 1; ++i) {
+	for (int i = 1; i <= source->max_offset - 1 && is_score_optimized(score); ++i) {
 		tmp->offset = i;
 		/* for each offset find optimal mutant */
-		for (int j = 1; j < source->len; ++j) {	
+		for (int j = 1; j < source->len && is_score_optimized(score); ++j) {	
 			// tmp = find_optimal_mutant(source, tmp, j);
 			tmp->hyphen_idx = j;
 			compare(source, tmp);
-			compare_and_swap(tmp, res);
+			compare_scores_and_swap(tmp, score);
 		}	
-		compare_and_swap(tmp, res);
+		compare_scores_and_swap(tmp, score);
+	}
+	if (score->hyphen_idx == 0) {
+		score->hyphen_idx = source->len;
+	}
+	else {
+		score->hyphen_idx += 1;
 	}
 	free(tmp);
-	return res;
+	return score;
 
 }
 
 /* The function compares the alignment score and swaps the results if needed */
-void compare_and_swap(const Alignment *a1, Alignment *a2) {
-	if (a1->alignment_score > a2->alignment_score) {
-		copy(a1, a2);
+void compare_scores_and_swap(const Score *s1, Score *s2) {
+	if (s1->alignment_score > s2->alignment_score) {
+		deep_copy_score(s1, s2);
 	}
 	// return a2;
 }
 
-int not_opt(Alignment *a) {
-	return !(a->alignment_score == a->max_score);
+int is_score_optimized(Score *score) {
+	return !(score->alignment_score == score->max_score);
 }
 
-Alignment* copy(const Alignment *source, Alignment *dest) {
+Score* deep_copy_score(const Score *source, Score *dest) {
 	dest->offset = source->offset;
 	dest->hyphen_idx = source->hyphen_idx;
 	dest->alignment_score = source->alignment_score;
@@ -155,71 +164,37 @@ Alignment* copy(const Alignment *source, Alignment *dest) {
 The functions compares characters between the 2 sequences in the Payload,
 and calculates the alignment score for a sequence #2
 */
-void compare(const Payload *d, Alignment *a) {
+void compare(const Payload *payload, Score *score) {
 	int seq1_char, seq2_char;
-	a->alignment_score = 0;
-	for (int char_index = 0; char_index < d->len; ++char_index) {
+	score->alignment_score = 0;
+	for (int char_index = 0; char_index < payload->len; ++char_index) {
 		/* Convert char to ABC order index */
-		if (char_index == a->hyphen_idx) {
-			seq1_char = d->seq1[char_index + 1 + a->offset] - 'A';	/* skip character if index is hyphen */
+		if (char_index == score->hyphen_idx && score->hyphen_idx != 0) {
+			seq1_char = payload->seq1[char_index + 1 + score->offset] - 'A';	/* skip character if index is hyphen */
 		}
 		else {
-			seq1_char = d->seq1[char_index + a->offset] - 'A';
+			seq1_char = payload->seq1[char_index + score->offset] - 'A';
 		}
-		seq2_char = d->seq2[char_index] - 'A';
+		seq2_char = payload->seq2[char_index] - 'A';
 		/* check sign of characters */
 		switch (chars_comparision[seq1_char][seq2_char]) {
 			case '$':
-				a->alignment_score += weights[0];
+				score->alignment_score += weights[0];
 				break;
 			case '%':
-				a->alignment_score -= weights[1];
+				score->alignment_score -= weights[1];
 				break;
 			case '#':
-				a->alignment_score -= weights[2];
+				score->alignment_score -= weights[2];
 				break;
 			default:
-				a->alignment_score -= weights[3];
+				score->alignment_score -= weights[3];
 				break;
 		}
 	}
 }
 
-void get_data(Payload *data, Alignment *res, int *num_of_sequences)
-{
-	char seq1[SEQ1_SIZE];
 
-	/* Get input from stdin */
-	fscanf(stdin, "%d %d %d %d", &weights[0], &weights[1], &weights[2],
-		   &weights[3]);
-	/* Get sequence 1 and convert to uppercase */
-	fscanf(stdin, "%s", seq1);
-	for (int i = 0; i < strlen(seq1); i++) {
-		if (seq1[i] >= 'a' && seq1[i] <= 'z')
-			seq1[i] = toupper(seq1[i]);
-	}
-
-	fscanf(stdin, "%d", num_of_sequences);
-	int seq_amount = *num_of_sequences;
-	data = (Payload *)malloc(sizeof(Payload) * seq_amount);
-	res = (Alignment *)malloc(sizeof(Alignment) * seq_amount);
-
-	for (int i = 0; i < seq_amount; i++)
-	{
-		printf("-----------In get data::iteration %d-----------\n", i+1);
-		// data[i].seq1 = strdup(seq1);
-		strcpy(data[i].seq1, seq1);
-		fscanf(stdin, "%s", data[i].seq2);
-		data[i].len = strlen(data[i].seq2);
-		data[i].max_offset = strlen(seq1) - data[i].len;
-		res[i].hyphen_idx = -1;
-		res[i].offset = 0;
-		res[i].max_score = strlen(data->seq2) * weights[0]; // stop if reached
-		printf("In get data:: Payload %d | len %d | seq2: %s\n",i+1, data[i].len, data[i].seq2);
-		// compare(&data[i], &res[i]);
-		// find_offset(&data[i], &res[i]);
-	}
-}
 
 /* 
 The functions builds a characters table with the size CHARS * CHARS and fills it with signs
@@ -261,9 +236,9 @@ void insert_string(const char *str, const char sign) {
 	}
 }
 
-void results_output(Alignment *res, int num_sequences) {
+void results_output(Score *scores, int num_sequences) {
 	fprintf(stdout, "The number of sequences in the input is: %d\n", num_sequences);
 	for (int i = 0; i < num_sequences; ++i) {
-		fprintf(stdout, "Sequence #%d | optimal offset(n): %d | optimal hyphen index(k): %d | alignment score: %d\n", i + 1, res[i].offset, res[i].hyphen_idx, res[i].alignment_score);
+		fprintf(stdout, "Sequence #%d | optimal offset(n): %d | optimal hyphen index(k): %d | alignment score: %d\n", i + 1, scores[i].offset, scores[i].hyphen_idx, scores[i].alignment_score);
 	}	
 }

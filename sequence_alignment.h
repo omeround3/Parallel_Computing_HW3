@@ -17,25 +17,25 @@ typedef struct Payload {
 	char seq1[SEQ1_SIZE + 1];
 	char seq2[SEQ2_SIZE + 1];
 	int len;
-	int max_offset;
+	int max_offset; 
 } Payload;
 
-typedef struct Alignments {
+typedef struct Score {
 	int offset;	/* seq2 offset */
 	int hyphen_idx;	/* hyphen offset */
 	int alignment_score;
-	int max_score;
-} Alignment;
+	int max_score; /* max score - the length of sequence 2 * first weight */
+} Score;
 
-int not_opt(Alignment *a);
+int is_score_optimized(Score *score);
 
 void build_table();
 void insert_string(const char *str, const char sign);
-void results_output(Alignment *res, int num_sequences);
+void results_output(Score *score, int num_sequences);
 
-Alignment* find_optimal_offset(const Payload *source, Alignment *res);
-Alignment* copy(const Alignment *source, Alignment *dest);
-void compare_and_swap(const Alignment *a1, Alignment *a2);
-void compare(const Payload *d, Alignment *a);
+Score* find_optimal_offset(const Payload *source, Score *res);
+Score* deep_copy_score(const Score *source, Score *dest);
+void compare_scores_and_swap(const Score *s1, Score *s2);
+void compare(const Payload *d, Score *score);
 
 #endif /* SEQUENCE_ALIGNMENT_H_ */
