@@ -82,8 +82,7 @@ int main(int argc, char *argv[])
 		
 		/* Get the sequeneces for comparision and save into structs */
 		for (int i = 0; i < num_of_sequences; i++)
-		{
-			// printf("-----------In get data::iteration %d-----------\n", i + 1);	
+		{	
 			strcpy(payload[i].seq1, seq1);
 			fscanf(stdin, "%s", payload[i].seq2);
 			payload[i].len = strlen(payload[i].seq2);
@@ -97,18 +96,7 @@ int main(int argc, char *argv[])
 			scores[i].alignment_score = 0;
 			scores[i].max_score = strlen(payload[i].seq2) * weights[0];
 
-			/* Calculate work size for each process */
-			// work_sizes[i].work_size = payload[i].max_offset / procceses_amount;
-			// work_sizes[i].reminder = payload[i].max_offset % procceses_amount;
 		}
-
-		/* Print check */
-		// printf("-------- Before broacasting --------\n");
-		// for (int i = 0; i < num_of_sequences; i++) {
-		// 	printf("Payload %d | Max offset: %d | Seq2 Length: %d\n", i+1,payload[i].max_offset, payload[i].len);
-		// 	// printf("WorkSize %d | Work Size offset: %d | Reminder: %d\n", i+1,work_sizes[i].work_size, work_sizes[i].reminder);
-		// }
-		// results_output(scores, num_of_sequences);
 	}
 
 	/* Defining MPI_TYPEs */
@@ -136,53 +124,30 @@ int main(int argc, char *argv[])
 	MPI_Type_create_struct(4, paylod_block_len, disp2, paylod_types, &PayloadMPIType);
 	MPI_Type_commit(&PayloadMPIType);
 
-	// WorkSize tmp3;
-	// MPI_Datatype WorkSizeMPIType;
-	// MPI_Datatype worksize_types[2] = {MPI_INT, MPI_INT};
-	// int worksize_block_len[2] = {1, 1};
-	// MPI_Aint disp3[2];
-	// disp2[0] = (char *)&tmp3.work_size - (char *)&tmp3;
-	// disp2[1] = (char *)&tmp3.reminder - (char *)&tmp3;
-	// MPI_Type_create_struct(2, worksize_block_len, disp3, worksize_types, &WorkSizeMPIType);
-	// MPI_Type_commit(&WorkSizeMPIType);
 
 	/* 	Broadcasting shared values for all MPI's processes */
 	MPI_Bcast(&num_of_sequences, 1, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
 	MPI_Bcast(&weights, WEIGHTS_NUM, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
 	MPI_Bcast(&chars_comparision, CHARS * CHARS, MPI_CHAR, MASTER_PROCESS, MPI_COMM_WORLD);
-
 	/* Allocation for other processes*/
 	if (process_rank != 0) {
 		payload = (Payload *)malloc(sizeof(Payload) * num_of_sequences);
 		scores = (Score *)malloc(sizeof(Score) * num_of_sequences);
-		// work_sizes= (WorkSize *)malloc(sizeof(WorkSize) * num_of_sequences);
 	}
 	/* 	Broadcasting share structs arrays for all MPI's processes */
 	MPI_Bcast(payload, num_of_sequences, PayloadMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
 	MPI_Bcast(scores, num_of_sequences, ScoreMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
-	// MPI_Bcast(work_sizes, num_of_sequences, WorkSizeMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
 	MPI_Barrier(MPI_COMM_WORLD);
 
-	/* Print check */
-	// if (process_rank != 0) {
-	// 	printf("\n-------- After broacasting --------\n");
-	// 	for (int i = 0; i < num_of_sequences; i++) {
-	// 		printf("Payload %d | Max offset: %d | Seq2 Length: %d | Seq2: %s\n", i+1,payload[i].max_offset, payload[i].len, payload[i].seq2);
-	// 		// printf("WorkSize %d | Work Size offset: %d | Reminder: %d\n", i+1,work_sizes[i].work_size, work_sizes[i].reminder);
-	// 		puts("");
-	// 	}
-	// 	results_output(scores, num_of_sequences);
-	// }
 
 
-	/*  */
+	/* Calculate score for each sequence, each processes takes a part of the max_offset. */
 	if (process_rank == 0) {
 		Score tmp_score;
 		for (int i = 0; i < num_of_sequences; ++i) {
+			/* Calculate offset for each sequence per process */
 			work_size = payload[i].max_offset / procceses_amount;
 			reminder = payload[i].max_offset % procceses_amount;
-
-			/* Calculate offset for each sequence per process */
 			start_offset = process_rank * work_size;
 			end_offset = (process_rank + 1) * work_size;
 			
@@ -201,7 +166,6 @@ int main(int argc, char *argv[])
 		}	
 	}
 	else {
-		
 		for (int i = 0; i < num_of_sequences; i++) {
 			/* Calculate offset for each sequence per process */
 			work_size = payload[i].max_offset / procceses_amount;
@@ -233,7 +197,7 @@ int main(int argc, char *argv[])
 	// // CUDA function
 	// 	cuda_calculation(&payload, &scores, *chars_comparision, weights, cuda_from, cuda_to);
 
-	// // Each thread will replace from-to chars and will find optimal offset
+	// Each thread will replace from-to chars and will find optimal offset
 	// 	omp_set_num_threads(THREADS);
 	// #pragma omp parallel for private(i)
 	// 	for (i = omp_from; i < omp_to; i++) {
