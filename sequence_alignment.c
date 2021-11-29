@@ -110,15 +110,9 @@ Score* find_optimal_offset(const Payload *source, Score *score) {
 
 	Score *tmp = (Score*) malloc(sizeof(Score));
 	tmp = deep_copy_score(score, tmp);
-
-	compare(source, score); /* hyphen_idx = 0 -> means the hyphen is at the end of ths string (e.g. ABC-) */
-
-	for (int j = 1; j < source->len && is_score_optimized(score); ++j) {	
-		score->hyphen_idx = j;
-		compare(source, tmp);
-		compare_scores_and_swap(tmp, score);
-	}	
-	for (int i = 1; i <= source->max_offset - 1 && is_score_optimized(score); ++i) {
+	/* Run first compare on source score and then compare to tmp scores */
+	compare(source, score); 
+	for (int i = 0; i <= source->max_offset - 1 && is_score_optimized(score); ++i) {
 		tmp->offset = i;
 		/* for each offset find optimal mutant */
 		for (int j = 1; j < source->len && is_score_optimized(score); ++j) {	
@@ -129,6 +123,7 @@ Score* find_optimal_offset(const Payload *source, Score *score) {
 		}	
 		compare_scores_and_swap(tmp, score);
 	}
+	/* hyphen_idx = 0 -> means the hyphen is at the end of ths string (e.g. ABC-) */
 	if (score->hyphen_idx == 0) {
 		score->hyphen_idx = source->len;
 	}
