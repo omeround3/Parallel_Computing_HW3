@@ -16,7 +16,8 @@
 #define A_ASCII 'A'
 #define SIZE_PAYLOAD 5012	/* size in bytes */
 #define SIZE_SCORE 16	/* size in bytes */
-#define STRUCTS_TAG 69
+#define REMINDER_TAG 69
+#define WORK_SIZE_TAG 70
 
 #include <omp.h>
 
@@ -33,6 +34,12 @@ typedef struct Score {
 	int alignment_score;
 	int max_score;	/* max score - the length of sequence 2 * first weight */
 } Score;
+
+/* A struct to save the work size needed per process per sequence and the reminder */
+typedef struct WorkSize {
+	int work_size;
+	int reminder;
+} WorkSize;
 
 int is_score_optimized(Score *score);
 

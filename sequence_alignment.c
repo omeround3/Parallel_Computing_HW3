@@ -34,11 +34,9 @@ int main(int argc, char *argv[])
 	int num_of_sequences;
 	int procceses_amount;				/* number of processes*/
 	int process_rank;					/* process rank (process ID) */
-	int sequences_per_process;
-	int sequences_per_worker;
-	int sequences_for_cuda;
-	int pack_position = 0;
-	int buffer_size;
+	int work_size;
+	int reminder;
+	int cuda_work_size, mp_work_size;
 
 	MPI_Status status;					/* return status for receive */
 
@@ -50,9 +48,7 @@ int main(int argc, char *argv[])
 
 	Payload *payload;
 	Score *scores;
-
-	Payload *r_payload;
-	Score *r_scores;
+	// WorkSize *work_sizes;
 
 	/* Check if number of processes is 2 or more */
 	if (procceses_amount < 2)
@@ -62,10 +58,7 @@ int main(int argc, char *argv[])
 	}
 
 	/* Only the master process handles the input and data initalization */
-	if (process_rank == 0)
-	{
-		fprintf(stdout, "Alignment Sequence Algorithm is running...\n");
-
+	if (process_rank == 0) {
 		build_table();
 
 		/* Get input from stdin */
@@ -83,13 +76,12 @@ int main(int argc, char *argv[])
 		fscanf(stdin, "%d", &num_of_sequences);
 		payload = (Payload *)malloc(sizeof(Payload) * num_of_sequences);
 		scores = (Score *)malloc(sizeof(Score) * num_of_sequences);
-		buffer_size = SIZE_PAYLOAD * num_of_sequences + SIZE_SCORE * num_of_sequences;
+		// work_sizes = (WorkSize *)malloc(sizeof(WorkSize) * num_of_sequences);
 		
 		/* Get the sequeneces for comparision and save into structs */
 		for (int i = 0; i < num_of_sequences; i++)
 		{
-			printf("-----------In get data::iteration %d-----------\n", i + 1);
-			// data[i].seq1 = strdup(seq1);
+			// printf("-----------In get data::iteration %d-----------\n", i + 1);	
 			strcpy(payload[i].seq1, seq1);
 			fscanf(stdin, "%s", payload[i].seq2);
 			payload[i].len = strlen(payload[i].seq2);
@@ -102,12 +94,19 @@ int main(int argc, char *argv[])
 			scores[i].offset = 0;
 			scores[i].alignment_score = 0;
 			scores[i].max_score = strlen(payload[i].seq2) * weights[0];
+
+			/* Calculate work size for each process */
+			// work_sizes[i].work_size = payload[i].max_offset / procceses_amount;
+			// work_sizes[i].reminder = payload[i].max_offset % procceses_amount;
 		}
-		// for (int i = 0; i < num_of_sequences; i++)
-		// {
-		// 	printf("Payload %d | len %d\n",i+1, payload[i].len);
-		// 	printf("Score %d | alignment score: %d | offset: %d\n",i+1, scores[i].alignment_score, scores[i].offset);
+
+		/* Print check */
+		// printf("-------- Before broacasting --------\n");
+		// for (int i = 0; i < num_of_sequences; i++) {
+		// 	printf("Payload %d | Max offset: %d | Seq2 Length: %d\n", i+1,payload[i].max_offset, payload[i].len);
+		// 	// printf("WorkSize %d | Work Size offset: %d | Reminder: %d\n", i+1,work_sizes[i].work_size, work_sizes[i].reminder);
 		// }
+		// results_output(scores, num_of_sequences);
 	}
 
 	/* Defining MPI_TYPEs */
@@ -135,58 +134,70 @@ int main(int argc, char *argv[])
 	MPI_Type_create_struct(4, paylod_block_len, disp2, paylod_types, &PayloadMPIType);
 	MPI_Type_commit(&PayloadMPIType);
 
+	// WorkSize tmp3;
+	// MPI_Datatype WorkSizeMPIType;
+	// MPI_Datatype worksize_types[2] = {MPI_INT, MPI_INT};
+	// int worksize_block_len[2] = {1, 1};
+	// MPI_Aint disp3[2];
+	// disp2[0] = (char *)&tmp3.work_size - (char *)&tmp3;
+	// disp2[1] = (char *)&tmp3.reminder - (char *)&tmp3;
+	// MPI_Type_create_struct(2, worksize_block_len, disp3, worksize_types, &WorkSizeMPIType);
+	// MPI_Type_commit(&WorkSizeMPIType);
+
 	/* 	Broadcasting shared values for all MPI's processes */
 	MPI_Bcast(&num_of_sequences, 1, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
-	MPI_Bcast(&buffer_size, 1, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
 	MPI_Bcast(&weights, WEIGHTS_NUM, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
 	MPI_Bcast(&chars_comparision, CHARS * CHARS, MPI_CHAR, MASTER_PROCESS, MPI_COMM_WORLD);
 
-	MPI_Barrier(MPI_COMM_WORLD);
-
-	/* Check broadcasting */
+	/* Allocation for other processes*/
 	if (process_rank != 0) {
 		payload = (Payload *)malloc(sizeof(Payload) * num_of_sequences);
 		scores = (Score *)malloc(sizeof(Score) * num_of_sequences);
-
+		// work_sizes= (WorkSize *)malloc(sizeof(WorkSize) * num_of_sequences);
 	}
+	/* 	Broadcasting share structs arrays for all MPI's processes */
 	MPI_Bcast(payload, num_of_sequences, PayloadMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
+	MPI_Bcast(scores, num_of_sequences, ScoreMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
+	// MPI_Bcast(work_sizes, num_of_sequences, WorkSizeMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
+	MPI_Barrier(MPI_COMM_WORLD);
 
-	if (process_rank != 0) {
-		
-		// printf("In worker process | Num of sequeneces: %d\n", num_of_sequences);
-		for (int i = 0; i < num_of_sequences; i++) {
-			printf("Max offset: %d | Seq2: %s\n", payload[i].max_offset, payload[i].seq2);
-		}
-	}
-
-	char pack_buffer[10056];			/* buffer for packing structs */
-
-	/* Pack payloads and scores and send to other processes */
-	// if (process_rank == 0) {
-	// 	/* distributes the portion of arrays to child processes */
-	// 	sequences_for_cuda = num_of_sequences / 2;
-	// 	sequences_per_process = num_of_sequences - sequences_for_cuda;
-		
-	// 	/* Pack data into the pack_buffer */
-	// 	MPI_Pack(payload, num_of_sequences, PayloadMPIType, pack_buffer, buffer_size, &pack_position, MPI_COMM_WORLD);
-	// 	for (int i = 1; i < procceses_amount; i++) {
-	// 		/* Send pack_buffer to other processes */
-	// 		MPI_Send(pack_buffer, pack_position, MPI_PACKED, i, STRUCTS_TAG, MPI_COMM_WORLD);
-	// 	}
-		
-	// }
-	// else {
-	// 	MPI_Recv(pack_buffer, buffer_size, MPI_PACKED, MASTER_PROCESS, STRUCTS_TAG, MPI_COMM_WORLD, &status);
-
-	// 	/* Unpack data from pack_buffer */
-	// 	MPI_Unpack(pack_buffer, buffer_size, &pack_position, payload, num_of_sequences, PayloadMPIType, MPI_COMM_WORLD);
-
+	/* Print check */
+	// if (process_rank != 0) {
+	// 	printf("\n-------- After broacasting --------\n");
 	// 	for (int i = 0; i < num_of_sequences; i++) {
-	// 		printf("Payload %d | Max offset: %d | Seq 2: %s\n", i+1, payload->max_offset, payload->seq2);
+	// 		printf("Payload %d | Max offset: %d | Seq2 Length: %d | Seq2: %s\n", i+1,payload[i].max_offset, payload[i].len, payload[i].seq2);
+	// 		// printf("WorkSize %d | Work Size offset: %d | Reminder: %d\n", i+1,work_sizes[i].work_size, work_sizes[i].reminder);
+	// 		puts("");
 	// 	}
-		
-
+	// 	results_output(scores, num_of_sequences);
 	// }
+
+
+	/*  */
+	if (process_rank == 0) {
+		for (int i = 0; i < num_of_sequences; ++i) {
+			work_size = payload[i].max_offset / procceses_amount;
+			reminder = payload[i].max_offset % procceses_amount;
+			MPI_Bcast(&work_size, 1, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
+			MPI_Bcast(&reminder, 1, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
+		}	
+	}
+	else {
+		int start_offset, end_offset;
+		for (int i = 0; i < num_of_sequences; i++) {
+			/* Calculate offset for each sequence per process */
+			start_offset = process_rank * work_size;
+			end_offset = (process_rank + 1) * work_size;
+
+			/* Last process handles offset reminder if exists */
+			if (process_rank == procceses_amount - 1 && reminder != 0) {
+				end_offset += reminder;
+			}
+
+		}
+		
+		
+	}
 
 
 	// // CUDA function
