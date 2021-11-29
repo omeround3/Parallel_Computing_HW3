@@ -185,15 +185,19 @@ int main(int argc, char *argv[])
 			/* Calculate offset for each sequence per process */
 			start_offset = process_rank * work_size;
 			end_offset = (process_rank + 1) * work_size;
-			// printf("In process %d | Start Offset: %d | End Offset: %d\n", process_rank, start_offset, end_offset);
-
-			find_optimal_offset(&payload[i], &scores[i], start_offset, end_offset);
-			// printf("In process %d | i = %d | Current Alignment Score: %d\n", process_rank, i, scores[i].alignment_score);
 			
+			// printf("In process %d | Start Offset: %d | End Offset: %d\n", process_rank, start_offset, end_offset);
+			// printf("In process %d | i = %d | Current Alignment Score: %d\n", process_rank, i, scores[i].alignment_score);
 			// printf("In process %d | In loop %d | after calculation\n", process_rank, i);
 			
-			MPI_Recv(&tmp_score, 1, ScoreMPIType, MPI_ANY_SOURCE, RESULT_TAG, MPI_COMM_WORLD, &status);
-			compare_scores_and_swap(&tmp_score, &scores[i]);
+			/* Recieve results from other processes and   */
+			for (int i = 1; i < procceses_amount; i++)
+			{
+				MPI_Recv(&tmp_score, 1, ScoreMPIType, MPI_ANY_SOURCE, RESULT_TAG, MPI_COMM_WORLD, &status);
+				compare_scores_and_swap(&tmp_score, &scores[i]);
+			}
+			/* Master process to do his work size */
+			find_optimal_offset(&payload[i], &scores[i], start_offset, end_offset);
 		}	
 	}
 	else {
