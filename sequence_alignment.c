@@ -36,6 +36,7 @@ int main(int argc, char *argv[])
 	int process_rank;					/* process rank (process ID) */
 	int work_size;
 	int reminder;
+	int start_offset, end_offset;
 	int cuda_work_size, mp_work_size;
 
 	MPI_Status status;					/* return status for receive */
@@ -44,7 +45,8 @@ int main(int argc, char *argv[])
 	MPI_Init(&argc, &argv);							  /* send MPI command line arguments  */
 	MPI_Comm_rank(MPI_COMM_WORLD, &process_rank);	  /* Get process rank */
 	MPI_Comm_size(MPI_COMM_WORLD, &procceses_amount); /* Get number of processes */
-	double start = MPI_Wtime();
+	double start, end;
+	start = MPI_Wtime();
 
 	Payload *payload;
 	Score *scores;
@@ -175,30 +177,53 @@ int main(int argc, char *argv[])
 
 	/*  */
 	if (process_rank == 0) {
+		Score tmp_score;
 		for (int i = 0; i < num_of_sequences; ++i) {
 			work_size = payload[i].max_offset / procceses_amount;
 			reminder = payload[i].max_offset % procceses_amount;
-			MPI_Bcast(&work_size, 1, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
-			MPI_Bcast(&reminder, 1, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
-		}	
-	}
-	else {
-		int start_offset, end_offset;
-		for (int i = 0; i < num_of_sequences; i++) {
+
 			/* Calculate offset for each sequence per process */
 			start_offset = process_rank * work_size;
 			end_offset = (process_rank + 1) * work_size;
+			// printf("In process %d | Start Offset: %d | End Offset: %d\n", process_rank, start_offset, end_offset);
+
+			find_optimal_offset(&payload[i], &scores[i], start_offset, end_offset);
+			// printf("In process %d | i = %d | Current Alignment Score: %d\n", process_rank, i, scores[i].alignment_score);
+			
+			// printf("In process %d | In loop %d | after calculation\n", process_rank, i);
+			
+			MPI_Recv(&tmp_score, 1, ScoreMPIType, MPI_ANY_SOURCE, RESULT_TAG, MPI_COMM_WORLD, &status);
+			compare_scores_and_swap(&tmp_score, &scores[i]);
+		}	
+	}
+	else {
+		
+		for (int i = 0; i < num_of_sequences; i++) {
+			/* Calculate offset for each sequence per process */
+			work_size = payload[i].max_offset / procceses_amount;
+			reminder = payload[i].max_offset % procceses_amount;
+			start_offset = process_rank * work_size;
+			end_offset = (process_rank + 1) * work_size;
+			
+			// printf("In process %d | Start Offset: %d | End Offset: %d\n", process_rank, start_offset, end_offset);
 
 			/* Last process handles offset reminder if exists */
 			if (process_rank == procceses_amount - 1 && reminder != 0) {
 				end_offset += reminder;
 			}
-
-		}
-		
-		
+			find_optimal_offset(&payload[i], &scores[i], start_offset, end_offset);
+			// printf("In process %d | i = %d | Current Alignment Score: %d\n", process_rank, i, scores[i].alignment_score);
+			MPI_Send(&scores[i], 1, ScoreMPIType, MASTER_PROCESS, RESULT_TAG, MPI_COMM_WORLD);
+		}		
 	}
 
+	
+	/* Print Results */
+	if (process_rank == 0) {
+		end = MPI_Wtime();
+		printf("Execution time is %f\n", end - start);
+		results_output(scores, num_of_sequences);
+	}
 
 	// // CUDA function
 	// 	cuda_calculation(&payload, &scores, *chars_comparision, weights, cuda_from, cuda_to);
@@ -245,13 +270,13 @@ Score *find_optimal_mutants(const Payload *source, Score *scores, int idx)
 	return scores;
 }
 
-Score *find_optimal_offset(const Payload *source, Score *score)
+Score *find_optimal_offset(const Payload *source, Score *score, int start_offset, int end_offset)
 {
 	Score *tmp = (Score*) malloc(sizeof(Score));
 	tmp = deep_copy_score(score, tmp);
 	/* Run first compare on source score and then compare to tmp scores */
 	compare(source, score); 
-	for (int i = 0; i <= source->max_offset - 1 && is_score_optimized(score); ++i) {
+	for (int i = start_offset; i <= end_offset - 1 && is_score_optimized(score); ++i) {
 		tmp->offset = i;
 		/* for each offset find optimal mutant */
 		for (int j = 1; j < source->len && is_score_optimized(score); ++j) {	
