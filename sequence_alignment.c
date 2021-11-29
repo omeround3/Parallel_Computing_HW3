@@ -191,9 +191,9 @@ int main(int argc, char *argv[])
 			// printf("In process %d | In loop %d | after calculation\n", process_rank, i);
 			
 			/* Recieve results from other processes and   */
-			for (int i = 1; i < procceses_amount; i++)
+			for (int j = 1; j < procceses_amount; j++)
 			{
-				MPI_Recv(&tmp_score, 1, ScoreMPIType, MPI_ANY_SOURCE, RESULT_TAG, MPI_COMM_WORLD, &status);
+				MPI_Recv(&tmp_score, 1, ScoreMPIType, j, RESULT_TAG, MPI_COMM_WORLD, &status);
 				compare_scores_and_swap(&tmp_score, &scores[i]);
 			}
 			/* Master process to do his work size */
@@ -221,6 +221,7 @@ int main(int argc, char *argv[])
 		}		
 	}
 
+	MPI_Barrier(MPI_COMM_WORLD);
 	
 	/* Print Results */
 	if (process_rank == 0) {
