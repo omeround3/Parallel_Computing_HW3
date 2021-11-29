@@ -25,55 +25,56 @@ __device__ char* dev_strcpy(char *dest, char *source) {
 	return ptr;
 }
 
-__device__ Alignment* dev_copy(const Alignment *source, Alignment *dest) {
+__device__ Score* dev_deep_copy_score(const Score *source, Score *dest) {
 	dest->offset = source->offset;
-	dest->char_idx = source->char_idx;
-	dest->char_val = source->char_val;
+	dest->hyphen_idx = source->hyphen_idx;
 	dest->alignment_score = source->alignment_score;
 	dest->max_score = source->max_score;
 	return dest;
 }
 
-__device__ Alignment* dev_compare(const Payload *d, Alignment *a, char *chars_comparision,
+__device__ Score* dev_compare(const Payload *d, Score *score, char *chars_comparision,
 		double *weights) {
-	int c1, c2;
-	a->alignment_score = 0;
-	for (int chr_ofst = 0; chr_ofst < d->len; ++chr_ofst) {
-		c1 = d->seq1[chr_ofst + a->offset] - 'A';
-		if (chr_ofst == a->char_idx) {
-			c2 = a->char_val;
-		} else {
-			c2 = d->seq2[chr_ofst] - 'A';
+	int seq1_char, seq2_char;
+	score->alignment_score = 0;
+	// printf("In compare::BEFORE LOOP\t");
+	for (int char_index = 0; char_index < payload->len; ++char_index) {
+		/* Convert char to ABC order index */
+		if (char_index == score->hyphen_idx) {
+			seq1_char = payload->seq1[char_index + 1 + score->offset] - 'A';	/* skip character if index is hyphen */
 		}
-		switch (chars_comparision[c1 * CHARS + c2]) {
-		case '$':
-			a->alignment_score += weights[0];
-			break;
-		case '%':
-			a->alignment_score -= weights[1];
-			break;
-		case '#':
-			a->alignment_score -= weights[2];
-			break;
-		default:
-			a->alignment_score -= weights[3];
-			break;
+		else {
+			seq1_char = payload->seq1[char_index + score->offset] - 'A';
+		}
+		seq2_char = payload->seq2[char_index] - 'A';
+		/* check sign of characters */
+		switch (chars_comparision[seq1_char][seq2_char]) {
+			case '$':
+				score->alignment_score += weights[0];
+				break;
+			case '%':
+				score->alignment_score -= weights[1];
+				break;
+			case '#':
+				score->alignment_score -= weights[2];
+				break;
+			default:
+				score->alignment_score -= weights[3];
+				break;
 		}
 	}
-	return a;
 }
 
-__device__ Alignment* dev_compare_and_swap(const Alignment *a1, Alignment *a2) {
-	if (a1->alignment_score > a2->alignment_score) {
-		dev_copy(a1, a2);
+__device__ Score* dev_compare_scores_and_swap(const Score *s1, Score *s2) {
+	if (s1->alignment_score > s2->alignment_score) {
+		dev_deep_copy_score(s1, s2);
 	}
-	return a2;
 }
-__device__ Alignment* dev_find_offset(const Payload *source, Alignment *res,
+__device__ Score* dev_find_optimal_offset(const Payload *source, Score *score,
 		char *chars_comparision, double *weights) {
 
-	Alignment tmp;
-	dev_copy(res, &tmp);
+	Score tmp;
+	dev_deep_copy_score(res, &tmp);
 
 	for (int i = 1; i <= source->max_offset; ++i) {
 		tmp.offset = i;
@@ -81,18 +82,17 @@ __device__ Alignment* dev_find_offset(const Payload *source, Alignment *res,
 		dev_compare_and_swap(&tmp, res);
 	}
 	return res;
-
 }
 
-__global__ void find_optimum(Payload *data, Alignment *results, char *chars_comparision,
+__global__ void find_optimum(Payload *data, Score *results, char *chars_comparision,
 		double *weights, int from) {
-	Alignment tmp;
+	Score tmp;
 
 // Each thread will write to element idx
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
 // Each block will be responsible to an idx in seq2
-	int char_idx = from + blockIdx.x;
+	int hyphen_idx = from + blockIdx.x;
 
 // Each thread in block will replace to a different char (CHARS threads in total)
 	int new_chr = threadIdx.x;
@@ -101,13 +101,12 @@ __global__ void find_optimum(Payload *data, Alignment *results, char *chars_comp
 	dev_copy(&results[idx], &tmp);
 
 // Set char to replace
-	tmp.char_idx = char_idx;
+	tmp.hyphen_idx = hyphen_idx;
 
 // Set target char (if possible to replace)
-	int c1 = data->seq2[char_idx] - 'A';
+	int c1 = data->seq2[hyphen_idx] - 'A';
 	char sign = chars_comparision[c1 * CHARS + new_chr];
 	if (sign != '%' && sign != '$') {
-		tmp.char_val = new_chr;
 		tmp.offset = 0;
 		dev_compare(data, &tmp, chars_comparision, weights);
 		dev_find_offset(data, &tmp, chars_comparision, weights);
@@ -131,32 +130,32 @@ void validate(cudaError_t err) {
 	}
 }
 
-Alignment* computeOnGPU(Payload *data, Alignment *res, char *chars_comparision, double *weights, int from, int to) {
+Score* cuda_calculation(Payload *data, Score *res, char *chars_comparision, double *weights, int from, int to) {
 	omp_set_num_threads(THREADS);
 
-	Alignment tmp;
-	copy(res, &tmp);
+	Score tmp;
+	deep_copy_score(res, &tmp);
 
 	int share = to - from;
-	size_t size = sizeof(Alignment) * share * CHARS;
+	size_t size = sizeof(Score) * share * CHARS;
 	size_t num_of_res = share * CHARS;
 
 // Error code to check return values for CUDA calls
 	cudaError_t err = cudaSuccess;
 
 // Allocate results array
-	Alignment *results_array = (Alignment*) malloc(size);
+	Score *results_array = (Score*) malloc(size);
 #pragma omp parallel for
 	for (int i = 0; i < num_of_res; ++i) {
-		copy(res, &results_array[i]);
+		deep_copy_score(res, &results_array[i]);
 	}
-// Allocate memory on GPU for Source Alignment
+// Allocate memory on GPU for Source Score
 	Payload *sourceGPU;
 	err = cudaMalloc((void**) &sourceGPU, sizeof(Payload));
 	validate(err);
 
 // Allocate memory on GPU for Results Alignments
-	Alignment *resultsGPU;
+	Score *resultsGPU;
 	err = cudaMalloc((void**) &resultsGPU, size);
 	validate(err);
 
@@ -204,11 +203,11 @@ Alignment* computeOnGPU(Payload *data, Alignment *res, char *chars_comparision, 
 		from = t_num * share;
 		to = t_num != THREADS - 1 ? (t_num + 1) * share : num_of_res;
 		for (int i = from; i < to; ++i) {
-			compare_and_swap(&results_array[i], &tmp);
+			compare_scores_and_swap(&results_array[i], &tmp);
 		}
 #pragma omp critical
 		{
-			compare_and_swap(&tmp, res);
+			compare_scores_and_swap(&tmp, res);
 		}
 	}
 

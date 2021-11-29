@@ -6,14 +6,17 @@
 #define SEQUENCE_ALIGNMENT_H_
 
 #define WEIGHTS_NUM 4
-#define STR_LEN 10
-#define CHARS 27
-#define CONSRV_SIZE 9
-#define SEMI_CONSRV_SIZE 11
+#define CHARS 26
+#define FIRST_TYPE_GROUP_SIZE 9
+#define SECOND_TYPE_GROUP_SIZE 11
 #define SEQ1_SIZE 3000
 #define SEQ2_SIZE 2000
+#define GROUPS_STRINGS_SIZE 10
 #define MASTER_PROCESS 0
-#define THREADS 2
+#define A_ASCII 'A'
+#define SIZE_PAYLOAD 5012	/* size in bytes */
+#define SIZE_SCORE 16	/* size in bytes */
+#define STRUCTS_TAG 69
 
 #include <omp.h>
 
@@ -24,28 +27,27 @@ typedef struct Payload {
 	int max_offset;
 } Payload;
 
-typedef struct Alignments {
+typedef struct Score {
 	int offset;	/* seq2 offset */
-	int char_idx;
-	int char_val;
+	int hyphen_idx;	/* hyphen offset */
 	int alignment_score;
-	int max_score;
-} Alignment;
+	int max_score;	/* max score - the length of sequence 2 * first weight */
+} Score;
 
-int not_opt(Alignment *a);
+int is_score_optimized(Score *score);
 
 void build_table();
 void insert_string(const char *str, const char sign);
-void output_print(Payload *data, Alignment *res);
+void results_output(Score *score, int num_sequences);
 
-Alignment* find_mutants(const Payload *source, Alignment *res, int idx);
-Alignment* find_offset(const Payload *source, Alignment *res);
-void compare_and_swap(const Alignment *a1, Alignment *a2);
-Alignment* copy(const Alignment *source, Alignment *dest);
-void compare(const Payload *d, Alignment *a);
+Score* find_optimal_mutants(const Payload *source, Score *score, int idx);
+Score* find_optimal_offset(const Payload *source, Score *score);
+Score* deep_copy_score(const Score *source, Score *dest);
+void compare_scores_and_swap(const Score *s1, Score *s2);
+void compare(const Payload *d, Score *score);
 
-void get_data(Payload *data, Alignment *res, int * num_of_sequences);
+void get_data(Payload *data, Score *score, int * num_of_sequences);
 
-Alignment* computeOnGPU(Payload *source, Alignment *result, char *chars_comparision,
+Score* cuda_calculation(Payload *source, Score *score, char *chars_comparision,
 		double *weights, int from, int to);
 #endif /* SEQUENCE_ALIGNMENT_H_ */
