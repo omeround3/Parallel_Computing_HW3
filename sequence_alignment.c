@@ -174,7 +174,11 @@ int main(int argc, char *argv[])
 			}
 			/* Master process to do his work size */
 			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
-			find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
+			// find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
+			#pragma omp parallel
+			{
+				find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
+			}
 		}	
 	}
 	else {
@@ -200,12 +204,16 @@ int main(int argc, char *argv[])
 			}
 			
 			// printf("In process %d | Start Offset: %d | End Offset: %d\n", process_rank, process_start_offset, process_end_offset);
+			// printf("In process %d | Seq 2 Length: %d\n", process_rank, payload[i].len);
+			// printf("In process %d | i = %d | Current Alignment Score: %d\n", process_rank, i, scores[i].alignment_score);
 
 			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
-			
-			// printf("In process %d | Seq 2 Length: %d\n", process_rank, payload[i].len);
-			find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
-			// printf("In process %d | i = %d | Current Alignment Score: %d\n", process_rank, i, scores[i].alignment_score);
+
+			// find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
+			#pragma omp parallel
+			{
+				find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
+			}
 
 
 			MPI_Send(&scores[i], 1, ScoreMPIType, MASTER_PROCESS, RESULT_TAG, MPI_COMM_WORLD);
@@ -221,39 +229,10 @@ int main(int argc, char *argv[])
 		results_output(scores, num_of_sequences);
 	}
 
-	// // CUDA function
-	// 	cuda_calculation(&payload, &scores, *chars_comparision, weights, cuda_from, cuda_to);
-
-	// Each thread will replace from-to chars and will find optimal offset
-	// 	omp_set_num_threads(THREADS);
-	// #pragma omp parallel for private(i)
-	// 	for (i = omp_from; i < omp_to; i++) {
-	// 		find_optimal_offset_omp(&payload, &res_arr[omp_get_thread_num()], i);
-	// 	}
-
-	// // Find optimal scores in threads results
-	// 	for (i = 0; i < THREADS; ++i) {
-	// 		compare_scores_and_swap(&res_arr[i], &scores);
-	// 	}
-
-	// // Get results from processes, compare and swap if needed
-	// 	if (process_rank != 0) {
-	// 		MPI_Send(&scores, 1, ScoreMPIType, 0, 0, MPI_COMM_WORLD);
-	// 	} else {
-	// 		for (int process = 0; process < procceses_amount - 1; ++process) {
-	// 			MPI_Recv(&tmp, 1, ScoreMPIType, MPI_ANY_SOURCE, 0,
-	// 			MPI_COMM_WORLD, &status);
-	// 			compare_scores_and_swap(&tmp, &scores);;
-	// 		}
-	// 		double end = MPI_Wtime();
-	// 		printf("Execution time is %f\n", end - start );
-	// 		output_print(&payload, &scores, output);
-	// 	}
-	// MPI_Finalize();
-
 	free(payload);
 	free(scores);
 
+	MPI_Finalize();
 	return 0;
 }
 
@@ -281,10 +260,7 @@ Score* find_optimal_offset_omp(const Payload *source, Score *score, int start_of
 	if (score->hyphen_idx == 0) {
 		score->hyphen_idx = source->len;
 	}
-	// else {
-	// 	score->hyphen_idx += 1;
-	// 	printf("Seq 2 Length: %d\n", score->hyphen_idx);
-	// }
+
 	free(tmp);
 	return score;
 }
@@ -311,10 +287,7 @@ Score *find_optimal_offset(const Payload *source, Score *score, int start_offset
 	if (score->hyphen_idx == 0) {
 		score->hyphen_idx = source->len;
 	}
-	// else {
-	// 	score->hyphen_idx += 1;
-	// 	printf("Seq 2 Length: %d\n", score->hyphen_idx);
-	// }
+
 	free(tmp);
 	return score;
 }
@@ -379,42 +352,6 @@ void compare(const Payload *payload, Score *score)
 	}
 }
 
-// void get_data(Payload *payload, Score *scores, int *num_of_sequences)
-// {
-// 	char seq1[SEQ1_SIZE];
-
-// 	/* Get input from stdin */
-// 	fscanf(stdin, "%d %d %d %d", &weights[0], &weights[1], &weights[2],
-// 		   &weights[3]);
-// 	/* Get sequence 1 and convert to uppercase */
-// 	fscanf(stdin, "%s", seq1);
-// 	for (int i = 0; i < strlen(seq1); i++) {
-// 		if (seq1[i] >= 'score' && seq1[i] <= 'z')
-// 			seq1[i] = toupper(seq1[i]);
-// 	}
-
-// 	fscanf(stdin, "%d", num_of_sequences);
-// 	int seq_amount = *num_of_sequences;
-// 	data = (Payload *)malloc(sizeof(Payload) * seq_amount);
-// 	scores = (Score *)malloc(sizeof(Score) * seq_amount);
-
-// 	for (int i = 0; i < seq_amount; i++)
-// 	{
-// 		printf("-----------In get payload::iteration %d-----------\n", i+1);
-// 		// payload[i].seq1 = strdup(seq1);
-// 		strcpy(payload[i].seq1, seq1);
-// 		fscanf(stdin, "%s", payload[i].seq2);
-// 		payload[i].len = strlen(payload[i].seq2);
-// 		payload[i].max_offset = strlen(seq1) - payload[i].len;
-// 		scores[i].hyphen_idx = -1;
-// 		scores[i].char_val = 0;
-// 		scores[i].offset = 0;
-// 		scores[i].max_score = strlen(payload->seq2) * weights[0]; // stop if reached
-// 		printf("In get payload:: Payload %d | len %d | seq2: %s\n",i+1, payload[i].len, payload[i].seq2);
-// 		// compare(&payload[i], &scores[i]);
-// 		// find_optimal_offset(&payload[i], &scores[i]);
-// 	}
-// }
 
 /* 
 The functions builds a characters table with the size CHARS * CHARS and fills it with signs
