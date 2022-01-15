@@ -116,7 +116,6 @@ Score* find_optimal_offset(const Payload *source, Score *score) {
 		tmp->offset = i;
 		/* for each offset find optimal mutant */
 		for (int j = 1; j < source->len && is_score_optimized(score); ++j) {	
-			// tmp = find_optimal_mutant(source, tmp, j);
 			tmp->hyphen_idx = j;
 			compare(source, tmp);
 			compare_scores_and_swap(tmp, score);
@@ -127,9 +126,7 @@ Score* find_optimal_offset(const Payload *source, Score *score) {
 	if (score->hyphen_idx == 0) {
 		score->hyphen_idx = source->len;
 	}
-	else {
-		score->hyphen_idx += 1;
-	}
+
 	free(tmp);
 	return score;
 
@@ -160,17 +157,19 @@ The functions compares characters between the 2 sequences in the Payload,
 and calculates the alignment score for a sequence #2
 */
 void compare(const Payload *payload, Score *score) {
+	int passed_hypen_flag = 0;
 	int seq1_char, seq2_char;
 	score->alignment_score = 0;
 	for (int char_index = 0; char_index < payload->len; ++char_index) {
 		/* Convert char to ABC order index */
-		if (char_index == score->hyphen_idx && score->hyphen_idx != 0) {
+		seq2_char = payload->seq2[char_index] - 'A';
+		if ((char_index == score->hyphen_idx && score->hyphen_idx != 0) || passed_hypen_flag) {
 			seq1_char = payload->seq1[char_index + 1 + score->offset] - 'A';	/* skip character if index is hyphen */
+			passed_hypen_flag = 1;
 		}
 		else {
 			seq1_char = payload->seq1[char_index + score->offset] - 'A';
 		}
-		seq2_char = payload->seq2[char_index] - 'A';
 		/* check sign of characters */
 		switch (chars_comparision[seq1_char][seq2_char]) {
 			case '$':
