@@ -243,18 +243,23 @@ Score* find_optimal_offset_omp(const Payload *source, Score *score, int start_of
 	tmp = deep_copy_score(score, tmp);
 	/* Run first compare on source score and then compare to tmp scores */
 	compare(source, score);
-	#pragma omp parallel for firstprivate(tmp) shared(source, score, start_offset, end_offset)
+	#pragma omp parallel for default(none) firstprivate(tmp) shared(source, score, start_offset, end_offset)
 	for (int i = start_offset; i <= end_offset - 1; ++i) {
 		tmp->offset = i;
 		/* for each hyphen offset find optimal */
 		for (int j = 1; j < source->len; ++j) {	
 			tmp->hyphen_idx = j;
-			// printf ("Tmp score: %d\n", tmp->alignment_score);
-			compare(source, tmp);
-			compare_scores_and_swap(tmp, score);
+			compare_omp(source, tmp);
+			if (tmp->alignment_score > score->alignment_score) {
+				#pragma omp critical 
+				{
+					score->offset = tmp->offset;
+					score->hyphen_idx = tmp->hyphen_idx;
+					score->alignment_score = tmp->alignment_score;
+					score->max_score = tmp->max_score;
+				}
+			}
 		}	
-		// printf ("Score: %d\n", score->alignment_score);
-		compare_scores_and_swap(tmp, score);
 	}
 	/* hyphen_idx = 0 -> means the hyphen is at the end of the string (e.g. ABC-) */
 	if (score->hyphen_idx == 0) {
@@ -276,12 +281,9 @@ Score *find_optimal_offset(const Payload *source, Score *score, int start_offset
 		/* for each hyphen offset find optimal */
 		for (int j = 1; j < source->len && is_score_optimized(score); ++j) {	
 			tmp->hyphen_idx = j;
-			// printf ("Tmp score: %d\n", tmp->alignment_score);
 			compare(source, tmp);
 			compare_scores_and_swap(tmp, score);
 		}	
-		// printf ("Score: %d\n", score->alignment_score);
-		compare_scores_and_swap(tmp, score);
 	}
 	/* hyphen_idx = 0 -> means the hyphen is at the end of the string (e.g. ABC-) */
 	if (score->hyphen_idx == 0) {
@@ -404,5 +406,47 @@ void results_output(Score *scores, int num_sequences)
 	for (int i = 0; i < num_sequences; ++i)
 	{
 		fprintf(stdout, "Sequence #%d | optimal offset(n): %d | optimal hyphen index(k): %d | alignment score: %d\n", i + 1, scores[i].offset, scores[i].hyphen_idx, scores[i].alignment_score);
+	}
+}
+
+
+/* 
+The functions compares characters between the 2 sequences in the Payload,
+and calculates the alignment score for a sequence #2
+*/
+void compare_omp(const Payload *payload, Score *score)
+{
+	int passed_hypen_flag = 0;
+	int seq1_char, seq2_char;
+	#pragma omp critical
+	score->alignment_score = 0;
+	for (int char_index = 0; char_index < payload->len; ++char_index) {
+		/* Convert char to ABC order index */
+		seq2_char = payload->seq2[char_index] - 'A';
+		if ((char_index == score->hyphen_idx && score->hyphen_idx != 0) || passed_hypen_flag) {
+			seq1_char = payload->seq1[char_index + 1 + score->offset] - 'A';	/* skip character if index is hyphen */
+			passed_hypen_flag = 1;
+		}
+		else {
+			seq1_char = payload->seq1[char_index + score->offset] - 'A';
+		}
+		/* check sign of characters */
+		#pragma omp critical
+		{
+		switch (chars_comparision[seq1_char][seq2_char]) {
+			case '$':
+				score->alignment_score += weights[0];
+				break;
+			case '%':
+				score->alignment_score -= weights[1];
+				break;
+			case '#':
+				score->alignment_score -= weights[2];
+				break;
+			default:
+				score->alignment_score -= weights[3];
+				break;
+		}
+		}
 	}
 }

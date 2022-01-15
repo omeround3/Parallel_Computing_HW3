@@ -50,6 +50,7 @@ Score* find_optimal_offset(const Payload *source, Score *score, int start_offset
 Score* deep_copy_score(const Score *source, Score *dest);
 void compare_scores_and_swap(const Score *s1, Score *s2);
 void compare(const Payload *d, Score *score);
+void compare_omp(const Payload *d, Score *score);
 
 void get_data(Payload *data, Score *score, int * num_of_sequences);
 
