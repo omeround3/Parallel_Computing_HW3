@@ -35,9 +35,11 @@ int main(int argc, char *argv[])
 	int procceses_amount;				/* number of processes*/
 	int process_rank;					/* process rank (process ID) */
 	int work_size;
-	int reminder;
-	int start_offset, end_offset;
-	int cuda_work_size, mp_work_size;
+	int offset_reminder;
+	int process_start_offset, process_end_offset;
+	int cuda_omp_work_size, cuda_omp_offset_reminder;
+	int omp_start_offset, omp_end_offset;
+	int cuda_start_offset, cuda_end_offset;
 
 	MPI_Status status;					/* return status for receive */
 
@@ -129,12 +131,12 @@ int main(int argc, char *argv[])
 	MPI_Bcast(&num_of_sequences, 1, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
 	MPI_Bcast(&weights, WEIGHTS_NUM, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
 	MPI_Bcast(&chars_comparision, CHARS * CHARS, MPI_CHAR, MASTER_PROCESS, MPI_COMM_WORLD);
-	/* Allocation for other processes*/
+	/* Allocation for other processes */
 	if (process_rank != 0) {
 		payload = (Payload *)malloc(sizeof(Payload) * num_of_sequences);
 		scores = (Score *)malloc(sizeof(Score) * num_of_sequences);
 	}
-	/* 	Broadcasting share structs arrays for all MPI's processes */
+	/* 	Broadcasting shared structs arrays for all MPI's processes */
 	MPI_Bcast(payload, num_of_sequences, PayloadMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
 	MPI_Bcast(scores, num_of_sequences, ScoreMPIType, MASTER_PROCESS, MPI_COMM_WORLD);
 	MPI_Barrier(MPI_COMM_WORLD);
@@ -147,11 +149,20 @@ int main(int argc, char *argv[])
 		for (int i = 0; i < num_of_sequences; ++i) {
 			/* Calculate offset for each sequence per process */
 			work_size = payload[i].max_offset / procceses_amount;
-			reminder = payload[i].max_offset % procceses_amount;
-			start_offset = process_rank * work_size;
-			end_offset = (process_rank + 1) * work_size;
+			offset_reminder = payload[i].max_offset % procceses_amount;
+
+			/* Calculate OpenMP/CUDA work size' */
+			cuda_omp_work_size = work_size / 2;
+			cuda_omp_offset_reminder = work_size % procceses_amount;
+
+			/* Set start/end offsets */
+			process_start_offset = process_rank * work_size;
+			process_end_offset = process_start_offset + cuda_omp_work_size;
+			// process_end_offset = (process_rank + 1) * work_size;
+			omp_start_offset = process_end_offset;
+			omp_end_offset = omp_start_offset + cuda_omp_work_size + cuda_omp_offset_reminder;
 			
-			// printf("In process %d | Start Offset: %d | End Offset: %d\n", process_rank, start_offset, end_offset);
+			// printf("In process %d | Start Offset: %d | End Offset: %d\n", process_rank, process_start_offset, process_end_offset);
 			// printf("In process %d | i = %d | Current Alignment Score: %d\n", process_rank, i, scores[i].alignment_score);
 			// printf("In process %d | In loop %d | after calculation\n", process_rank, i);
 			
@@ -162,25 +173,41 @@ int main(int argc, char *argv[])
 				compare_scores_and_swap(&tmp_score, &scores[i]);
 			}
 			/* Master process to do his work size */
-			find_optimal_offset(&payload[i], &scores[i], start_offset, end_offset);
+			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
+			find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
 		}	
 	}
 	else {
 		for (int i = 0; i < num_of_sequences; i++) {
 			/* Calculate offset for each sequence per process */
 			work_size = payload[i].max_offset / procceses_amount;
-			reminder = payload[i].max_offset % procceses_amount;
-			start_offset = process_rank * work_size;
-			end_offset = (process_rank + 1) * work_size;
-			
-			// printf("In process %d | Start Offset: %d | End Offset: %d\n", process_rank, start_offset, end_offset);
+			offset_reminder = payload[i].max_offset % procceses_amount;
+
+			/* Calculate OpenMP/CUDA work size' */
+			cuda_omp_work_size = work_size / 2;
+			cuda_omp_offset_reminder = work_size % procceses_amount;
+
+			/* Set start/end offsets */
+			process_start_offset = process_rank * work_size;
+			process_end_offset = process_start_offset + cuda_omp_work_size;
+			// process_end_offset = (process_rank + 1) * work_size;
+			omp_start_offset = process_end_offset;
+			omp_end_offset = omp_start_offset + cuda_omp_work_size + cuda_omp_offset_reminder;
 
 			/* Last process handles offset reminder if exists */
-			if (process_rank == procceses_amount - 1 && reminder != 0) {
-				end_offset += reminder;
+			if (process_rank == procceses_amount - 1 && offset_reminder != 0) {
+				omp_end_offset += offset_reminder;
 			}
-			find_optimal_offset(&payload[i], &scores[i], start_offset, end_offset);
+			
+			// printf("In process %d | Start Offset: %d | End Offset: %d\n", process_rank, process_start_offset, process_end_offset);
+
+			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
+			
+			// printf("In process %d | Seq 2 Length: %d\n", process_rank, payload[i].len);
+			find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
 			// printf("In process %d | i = %d | Current Alignment Score: %d\n", process_rank, i, scores[i].alignment_score);
+
+
 			MPI_Send(&scores[i], 1, ScoreMPIType, MASTER_PROCESS, RESULT_TAG, MPI_COMM_WORLD);
 		}		
 	}
@@ -201,7 +228,7 @@ int main(int argc, char *argv[])
 	// 	omp_set_num_threads(THREADS);
 	// #pragma omp parallel for private(i)
 	// 	for (i = omp_from; i < omp_to; i++) {
-	// 		find_optimal_mutants(&payload, &res_arr[omp_get_thread_num()], i);
+	// 		find_optimal_offset_omp(&payload, &res_arr[omp_get_thread_num()], i);
 	// 	}
 
 	// // Find optimal scores in threads results
@@ -230,13 +257,36 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
-Score *find_optimal_mutants(const Payload *source, Score *scores, int idx)
-{
-	Score *tmp = (Score *)malloc(sizeof(Score));
-	tmp->hyphen_idx = idx;
 
+Score* find_optimal_offset_omp(const Payload *source, Score *score, int start_offset, int end_offset)
+{
+	Score *tmp = (Score*) malloc(sizeof(Score));
+	tmp = deep_copy_score(score, tmp);
+	/* Run first compare on source score and then compare to tmp scores */
+	compare(source, score);
+	#pragma omp parallel for
+	for (int i = start_offset; i <= end_offset - 1; ++i) {
+		tmp->offset = i;
+		/* for each hyphen offset find optimal */
+		for (int j = 1; j < source->len; ++j) {	
+			tmp->hyphen_idx = j;
+			// printf ("Tmp score: %d\n", tmp->alignment_score);
+			compare(source, tmp);
+			compare_scores_and_swap(tmp, score);
+		}	
+		// printf ("Score: %d\n", score->alignment_score);
+		compare_scores_and_swap(tmp, score);
+	}
+	/* hyphen_idx = 0 -> means the hyphen is at the end of the string (e.g. ABC-) */
+	if (score->hyphen_idx == 0) {
+		score->hyphen_idx = source->len;
+	}
+	// else {
+	// 	score->hyphen_idx += 1;
+	// 	printf("Seq 2 Length: %d\n", score->hyphen_idx);
+	// }
 	free(tmp);
-	return scores;
+	return score;
 }
 
 Score *find_optimal_offset(const Payload *source, Score *score, int start_offset, int end_offset)
@@ -247,22 +297,24 @@ Score *find_optimal_offset(const Payload *source, Score *score, int start_offset
 	compare(source, score); 
 	for (int i = start_offset; i <= end_offset - 1 && is_score_optimized(score); ++i) {
 		tmp->offset = i;
-		/* for each offset find optimal mutant */
+		/* for each hyphen offset find optimal */
 		for (int j = 1; j < source->len && is_score_optimized(score); ++j) {	
-			// tmp = find_optimal_mutant(source, tmp, j);
 			tmp->hyphen_idx = j;
+			// printf ("Tmp score: %d\n", tmp->alignment_score);
 			compare(source, tmp);
 			compare_scores_and_swap(tmp, score);
 		}	
+		// printf ("Score: %d\n", score->alignment_score);
 		compare_scores_and_swap(tmp, score);
 	}
-	/* hyphen_idx = 0 -> means the hyphen is at the end of ths string (e.g. ABC-) */
+	/* hyphen_idx = 0 -> means the hyphen is at the end of the string (e.g. ABC-) */
 	if (score->hyphen_idx == 0) {
 		score->hyphen_idx = source->len;
 	}
-	else {
-		score->hyphen_idx += 1;
-	}
+	// else {
+	// 	score->hyphen_idx += 1;
+	// 	printf("Seq 2 Length: %d\n", score->hyphen_idx);
+	// }
 	free(tmp);
 	return score;
 }
@@ -296,17 +348,19 @@ and calculates the alignment score for a sequence #2
 */
 void compare(const Payload *payload, Score *score)
 {
+	int passed_hypen_flag = 0;
 	int seq1_char, seq2_char;
 	score->alignment_score = 0;
 	for (int char_index = 0; char_index < payload->len; ++char_index) {
 		/* Convert char to ABC order index */
-		if (char_index == score->hyphen_idx && score->hyphen_idx != 0) {
+		seq2_char = payload->seq2[char_index] - 'A';
+		if ((char_index == score->hyphen_idx && score->hyphen_idx != 0) || passed_hypen_flag) {
 			seq1_char = payload->seq1[char_index + 1 + score->offset] - 'A';	/* skip character if index is hyphen */
+			passed_hypen_flag = 1;
 		}
 		else {
 			seq1_char = payload->seq1[char_index + score->offset] - 'A';
 		}
-		seq2_char = payload->seq2[char_index] - 'A';
 		/* check sign of characters */
 		switch (chars_comparision[seq1_char][seq2_char]) {
 			case '$':

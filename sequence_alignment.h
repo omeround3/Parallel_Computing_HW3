@@ -16,8 +16,6 @@
 #define A_ASCII 'A'
 #define SIZE_PAYLOAD 5012	/* size in bytes */
 #define SIZE_SCORE 16	/* size in bytes */
-#define REMINDER_TAG 69
-#define WORK_SIZE_TAG 70
 #define RESULT_TAG	71
 #include <omp.h>
 
@@ -47,7 +45,7 @@ void build_table();
 void insert_string(const char *str, const char sign);
 void results_output(Score *score, int num_sequences);
 
-Score* find_optimal_mutants(const Payload *source, Score *score, int idx);
+Score* find_optimal_offset_omp(const Payload *source, Score *score, int start_offset, int end_offset);
 Score* find_optimal_offset(const Payload *source, Score *score, int start_offset, int end_offset);
 Score* deep_copy_score(const Score *source, Score *dest);
 void compare_scores_and_swap(const Score *s1, Score *s2);
