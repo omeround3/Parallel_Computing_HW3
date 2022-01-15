@@ -175,10 +175,10 @@ int main(int argc, char *argv[])
 			/* Master process to do his work size */
 			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
 			// find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
-			#pragma omp parallel
-			{
+			// #pragma omp parallel
+			// {
 				find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
-			}
+			// }
 		}	
 	}
 	else {
@@ -210,10 +210,10 @@ int main(int argc, char *argv[])
 			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
 
 			// find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
-			#pragma omp parallel
-			{
+			// #pragma omp parallel
+			// {
 				find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
-			}
+			// }
 
 
 			MPI_Send(&scores[i], 1, ScoreMPIType, MASTER_PROCESS, RESULT_TAG, MPI_COMM_WORLD);
@@ -243,7 +243,7 @@ Score* find_optimal_offset_omp(const Payload *source, Score *score, int start_of
 	tmp = deep_copy_score(score, tmp);
 	/* Run first compare on source score and then compare to tmp scores */
 	compare(source, score);
-	#pragma omp parallel for
+	#pragma omp parallel for firstprivate(tmp) shared(source, score, start_offset, end_offset)
 	for (int i = start_offset; i <= end_offset - 1; ++i) {
 		tmp->offset = i;
 		/* for each hyphen offset find optimal */
