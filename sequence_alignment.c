@@ -35,7 +35,7 @@ int main(int argc, char *argv[])
 	int procceses_amount;				/* number of processes*/
 	int process_rank;					/* process rank (process ID) */
 	int work_size;
-	int offset_reminder;
+	int offset_remainder;
 	int process_start_offset, process_end_offset;
 	int cuda_omp_work_size, cuda_omp_offset_reminder;
 	int omp_start_offset, omp_end_offset;
@@ -149,7 +149,7 @@ int main(int argc, char *argv[])
 		for (int i = 0; i < num_of_sequences; ++i) {
 			/* Calculate offset for each sequence per process */
 			work_size = payload[i].max_offset / procceses_amount;
-			offset_reminder = payload[i].max_offset % procceses_amount;
+			offset_remainder = payload[i].max_offset % procceses_amount;
 
 			/* Calculate OpenMP/CUDA work size' */
 			cuda_omp_work_size = work_size / 2;
@@ -166,26 +166,24 @@ int main(int argc, char *argv[])
 			// printf("In process %d | i = %d | Current Alignment Score: %d\n", process_rank, i, scores[i].alignment_score);
 			// printf("In process %d | In loop %d | after calculation\n", process_rank, i);
 			
+			/* Master process to do his work size */
+			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
+			find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
+
+			// find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
 			/* Recieve results from other processes and   */
 			for (int j = 1; j < procceses_amount; j++)
 			{
 				MPI_Recv(&tmp_score, 1, ScoreMPIType, j, RESULT_TAG, MPI_COMM_WORLD, &status);
 				compare_scores_and_swap(&tmp_score, &scores[i]);
 			}
-			/* Master process to do his work size */
-			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
-			// find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
-			// #pragma omp parallel
-			// {
-				find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
-			// }
 		}	
 	}
 	else {
 		for (int i = 0; i < num_of_sequences; i++) {
 			/* Calculate offset for each sequence per process */
 			work_size = payload[i].max_offset / procceses_amount;
-			offset_reminder = payload[i].max_offset % procceses_amount;
+			offset_remainder = payload[i].max_offset % procceses_amount;
 
 			/* Calculate OpenMP/CUDA work size' */
 			cuda_omp_work_size = work_size / 2;
@@ -199,8 +197,8 @@ int main(int argc, char *argv[])
 			omp_end_offset = omp_start_offset + cuda_omp_work_size + cuda_omp_offset_reminder;
 
 			/* Last process handles offset reminder if exists */
-			if (process_rank == procceses_amount - 1 && offset_reminder != 0) {
-				omp_end_offset += offset_reminder;
+			if (process_rank == procceses_amount - 1 && offset_remainder != 0) {
+				omp_end_offset += offset_remainder;
 			}
 			
 			// printf("In process %d | Start Offset: %d | End Offset: %d\n", process_rank, process_start_offset, process_end_offset);
@@ -209,11 +207,8 @@ int main(int argc, char *argv[])
 
 			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
 
-			// find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
-			// #pragma omp parallel
-			// {
-				find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
-			// }
+			find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
+			// find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
 
 
 			MPI_Send(&scores[i], 1, ScoreMPIType, MASTER_PROCESS, RESULT_TAG, MPI_COMM_WORLD);
@@ -239,20 +234,30 @@ int main(int argc, char *argv[])
 
 Score* find_optimal_offset_omp(const Payload *source, Score *score, int start_offset, int end_offset)
 {
+	// Score *tmp = (Score*) malloc(sizeof(Score));
 	Score *tmp = (Score*) malloc(sizeof(Score));
-	tmp = deep_copy_score(score, tmp);
 	/* Run first compare on source score and then compare to tmp scores */
+	printf("Before compare Open MP | Start Offset %d | Score: %d , hypen_idx: %d\n", score->offset, score->alignment_score, score->hyphen_idx);
+	score->offset = start_offset;
 	compare(source, score);
+	printf("After compare Open MP | Start Offset %d | Score: %d , hypen_idx: %d\n", score->offset, score->alignment_score, score->hyphen_idx);
+	tmp = deep_copy_score(score, tmp);
 	#pragma omp parallel for default(none) firstprivate(tmp) shared(source, score, start_offset, end_offset)
 	for (int i = start_offset; i <= end_offset - 1; ++i) {
 		tmp->offset = i;
+		#pragma omp critical 
+		{
+			printf("Thread (offset): %d, Tmp: %d , hypen_idx: %d\n", i, tmp->alignment_score, tmp->hyphen_idx);
+			printf("Thread (offset): %d, Score: %d , hypen_idx: %d\n", i, score->alignment_score, score->hyphen_idx);
+		}	
 		/* for each hyphen offset find optimal */
 		for (int j = 1; j < source->len; ++j) {	
 			tmp->hyphen_idx = j;
-			compare_omp(source, tmp);
-			if (tmp->alignment_score > score->alignment_score) {
-				#pragma omp critical 
-				{
+			#pragma omp critical 
+			{
+				compare(source, tmp);
+				if (tmp->alignment_score > score->alignment_score) {
+					// printf("%d, %d ,%d , %d\n", i, j, tmp->alignment_score, score->alignment_score);
 					score->offset = tmp->offset;
 					score->hyphen_idx = tmp->hyphen_idx;
 					score->alignment_score = tmp->alignment_score;
@@ -273,11 +278,16 @@ Score* find_optimal_offset_omp(const Payload *source, Score *score, int start_of
 Score *find_optimal_offset(const Payload *source, Score *score, int start_offset, int end_offset)
 {
 	Score *tmp = (Score*) malloc(sizeof(Score));
-	tmp = deep_copy_score(score, tmp);
 	/* Run first compare on source score and then compare to tmp scores */
+	// printf("Before compare MPI | Start Offset %d | Score: %d , hypen_idx: %d\n", score->offset, score->alignment_score, score->hyphen_idx);
 	compare(source, score); 
+	score->offset = start_offset;
+	// printf("After compare MPI | Start Offset %d | Score: %d , hypen_idx: %d\n", score->offset, score->alignment_score, score->hyphen_idx);
+	tmp = deep_copy_score(score, tmp);
 	for (int i = start_offset; i <= end_offset - 1 && is_score_optimized(score); ++i) {
 		tmp->offset = i;
+		// printf("Offset: %d, Tmp: %d , hypen_idx: %d\n", i, tmp->alignment_score, tmp->hyphen_idx);
+		// printf("Offset: %d, Score: %d , hypen_idx: %d\n", i, score->alignment_score, score->hyphen_idx);
 		/* for each hyphen offset find optimal */
 		for (int j = 1; j < source->len && is_score_optimized(score); ++j) {	
 			tmp->hyphen_idx = j;
