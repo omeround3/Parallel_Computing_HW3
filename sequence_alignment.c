@@ -162,10 +162,6 @@ int main(int argc, char *argv[])
 			omp_start_offset = process_end_offset;
 			omp_end_offset = omp_start_offset + cuda_omp_work_size + cuda_omp_offset_reminder;
 			
-			// printf("In process %d | Start Offset: %d | End Offset: %d\n", process_rank, process_start_offset, process_end_offset);
-			// printf("In process %d | i = %d | Current Alignment Score: %d\n", process_rank, i, scores[i].alignment_score);
-			// printf("In process %d | In loop %d | after calculation\n", process_rank, i);
-			
 			/* Master process to do his work size */
 			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
 
@@ -200,10 +196,6 @@ int main(int argc, char *argv[])
 			if (process_rank == procceses_amount - 1 && offset_remainder != 0) {
 				omp_end_offset += offset_remainder;
 			}
-			
-			// printf("In process %d | Start Offset: %d | End Offset: %d\n", process_rank, process_start_offset, process_end_offset);
-			// printf("In process %d | Seq 2 Length: %d\n", process_rank, payload[i].len);
-			// printf("In process %d | i = %d | Current Alignment Score: %d\n", process_rank, i, scores[i].alignment_score);
 
 			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
 
@@ -237,27 +229,21 @@ Score* find_optimal_offset_omp(const Payload *source, Score *score, int start_of
 	Score *tmp = (Score*) malloc(sizeof(Score));
 
 	/* Run first compare on source score and then compare to tmp scores */
-	// printf("Before compare OpenMP | Start Offset %d | Score: %d , hypen_idx: %d\n", score->offset, score->alignment_score, score->hyphen_idx);
 	compare(source, score);
 	score->offset = start_offset;
-	// printf("After compare OpenMP | Start Offset %d | Score: %d , hypen_idx: %d\n", score->offset, score->alignment_score, score->hyphen_idx);
-	
 	tmp = deep_copy_score(score, tmp);
-
-	#pragma omp parallel for default(none) firstprivate(tmp) shared(source, score, start_offset, end_offset)
+	
 	for (int i = start_offset; i <= end_offset - 1; ++i) {
 		tmp->offset = i;
 
-		printf("OpenMP (offset): %d, Tmp: %d , hypen_idx: %d | Score: %d , hypen_idx: %d\n", i, tmp->alignment_score, tmp->hyphen_idx, score->alignment_score, score->hyphen_idx);
-		
 		/* for each hyphen offset find optimal */
+		#pragma omp parallel for default(none) firstprivate(tmp) shared(source, score, start_offset, end_offset)
 		for (int j = 1; j < source->len; ++j) {	
 			tmp->hyphen_idx = j;
-			compare(source, tmp);
 			#pragma omp critical 
 			{
+				compare(source, tmp);
 				if (tmp->alignment_score > score->alignment_score) {
-					printf("%d, %d ,%d , %d\n", i, j, tmp->alignment_score, score->alignment_score);
 					score->offset = tmp->offset;
 					score->hyphen_idx = tmp->hyphen_idx;
 					score->alignment_score = tmp->alignment_score;
@@ -280,16 +266,13 @@ Score *find_optimal_offset(const Payload *source, Score *score, int start_offset
 	Score *tmp = (Score*) malloc(sizeof(Score));
 
 	/* Run first compare on source score and then compare to tmp scores */
-	// printf("Before compare MPI | Start Offset %d | Score: %d , hypen_idx: %d\n", score->offset, score->alignment_score, score->hyphen_idx);
 	compare(source, score); 
 	score->offset = start_offset;
-	// printf("After compare MPI | Start Offset %d | Score: %d , hypen_idx: %d\n", score->offset, score->alignment_score, score->hyphen_idx);
-
 	tmp = deep_copy_score(score, tmp);
+
 	for (int i = start_offset; i <= end_offset - 1 && is_score_optimized(score); ++i) {
 		tmp->offset = i;
-		printf("MPI Offset: %d, Tmp: %d , hypen_idx: %d | Score: %d , hypen_idx: %d\n", i, tmp->alignment_score, tmp->hyphen_idx, score->alignment_score, score->hyphen_idx);
-		
+
 		/* for each hyphen offset find optimal */
 		for (int j = 1; j < source->len && is_score_optimized(score); ++j) {	
 			tmp->hyphen_idx = j;
@@ -311,7 +294,6 @@ void compare_scores_and_swap(const Score *s1, Score *s2)
 {
 	if (s1->alignment_score > s2->alignment_score)
 	{
-		printf("%d, %d ,%d , %d\n", s1->offset, s1->hyphen_idx, s1->alignment_score, s2->alignment_score);
 		deep_copy_score(s1, s2);
 	}
 }
@@ -419,49 +401,5 @@ void results_output(Score *scores, int num_sequences)
 	for (int i = 0; i < num_sequences; ++i)
 	{
 		fprintf(stdout, "Sequence #%d | optimal offset(n): %d | optimal hyphen index(k): %d | alignment score: %d\n", i + 1, scores[i].offset, scores[i].hyphen_idx, scores[i].alignment_score);
-	}
-}
-
-
-/* 
-The functions compares characters between the 2 sequences in the Payload,
-and calculates the alignment score for a sequence #2
-*/
-void compare_omp(const Payload *payload, Score *score)
-{
-	int passed_hypen_flag = 0;
-	int seq1_char, seq2_char;
-	#pragma omp critical
-	{
-		score->alignment_score = 0;
-	}
-	for (int char_index = 0; char_index < payload->len; ++char_index) {
-		/* Convert char to ABC order index */
-		seq2_char = payload->seq2[char_index] - 'A';
-		if ((char_index == score->hyphen_idx && score->hyphen_idx != 0) || passed_hypen_flag) {
-			seq1_char = payload->seq1[char_index + 1 + score->offset] - 'A';	/* skip character if index is hyphen */
-			passed_hypen_flag = 1;
-		}
-		else {
-			seq1_char = payload->seq1[char_index + score->offset] - 'A';
-		}
-		#pragma omp critical
-		{
-			/* check sign of characters */
-			switch (chars_comparision[seq1_char][seq2_char]) {
-				case '$':
-					score->alignment_score += weights[0];
-					break;
-				case '%':
-					score->alignment_score -= weights[1];
-					break;
-				case '#':
-					score->alignment_score -= weights[2];
-					break;
-				default:
-					score->alignment_score -= weights[3];
-					break;
-			}
-		}
 	}
 }
