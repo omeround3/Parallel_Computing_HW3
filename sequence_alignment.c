@@ -239,7 +239,6 @@ Score *find_optimal_offset_omp(const Payload *source, Score *score, int start_of
 	for (int i = start_offset; i <= end_offset - 1; ++i)
 	{
 		tmp->offset = i;
-
 		/* for each hyphen offset find optimal */
 		#pragma omp parallel for default(none) firstprivate(tmp) shared(source, score, start_offset, end_offset)
 		for (int j = 1; j < source->len; ++j)
