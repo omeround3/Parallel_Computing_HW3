@@ -164,7 +164,8 @@ int main(int argc, char *argv[])
 			omp_end_offset = omp_start_offset + cuda_omp_work_size + cuda_omp_offset_reminder;
 
 			/* Master process to do his work size */
-			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
+			// find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
+			cuda_calculation(&payload[i], &scores[i], *chars_comparision, weights, process_start_offset, process_end_offset);
 
 			// find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
 			find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
@@ -201,7 +202,8 @@ int main(int argc, char *argv[])
 				omp_end_offset += offset_remainder;
 			}
 
-			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
+			// find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
+			cuda_calculation(&payload[i], &scores[i], *chars_comparision, weights, process_start_offset, process_end_offset);
 
 			// find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
 			find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);

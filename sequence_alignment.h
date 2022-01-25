@@ -55,5 +55,5 @@ void compare_omp(const Payload *d, Score *score);
 void get_data(Payload *data, Score *score, int * num_of_sequences);
 
 Score* cuda_calculation(Payload *source, Score *score, char *chars_comparision,
-		double *weights, int from, int to);
+		int *weights, int start_offset, int end_offset);
 #endif /* SEQUENCE_ALIGNMENT_H_ */
