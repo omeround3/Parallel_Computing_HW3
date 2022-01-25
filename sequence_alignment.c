@@ -233,7 +233,6 @@ Score *find_optimal_offset_omp(const Payload *source, Score *score, int start_of
 
 	/* Run first compare on source score and then compare to tmp scores */
 	compare(source, score);
-	score->offset = start_offset;
 	tmp = deep_copy_score(score, tmp);
 
 	for (int i = start_offset; i <= end_offset - 1; ++i)
@@ -267,7 +266,6 @@ Score *find_optimal_offset(const Payload *source, Score *score, int start_offset
 
 	/* Run first compare on source score and then compare to tmp scores */
 	compare(source, score);
-	score->offset = start_offset;
 	tmp = deep_copy_score(score, tmp);
 
 	for (int i = start_offset; i <= end_offset - 1 && is_score_optimized(score); ++i)
