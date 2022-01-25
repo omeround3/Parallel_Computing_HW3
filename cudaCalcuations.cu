@@ -3,30 +3,6 @@
 #include <string.h>
 #include "sequence_alignment.h"
 
-__device__ int dev_strlen(char *dest)
-{
-	int count = 0;
-	char c = dest[count];
-	while (c != '\0')
-	{
-		count++;
-		c = dest[count];
-	}
-	return count;
-}
-
-__device__ char *dev_strcpy(char *dest, char *source)
-{
-	char *ptr = dest;
-	while (*source != '\0')
-	{
-		*dest = *source;
-		dest++;
-		source++;
-	}
-	*dest = '\0';
-	return ptr;
-}
 
 __device__ Score *dev_deep_copy_score(const Score *source, Score *dest)
 {
@@ -89,11 +65,6 @@ __device__ void dev_compare(const Payload *payload, Score *score, char *chars_co
 	}
 }
 
-__device__ int getGlobalIdx_1D_1D()
-{
-	return blockIdx.x * blockDim.x + threadIdx.x;
-}
-
 __global__ void find_optimal_offset_cuda(Payload *source, Score *score, char *chars_comparision, int *weights)
 {
 	Score tmp;
@@ -105,12 +76,9 @@ __global__ void find_optimal_offset_cuda(Payload *source, Score *score, char *ch
 	/* Each block will be responsible for an offset */
 	tmp.offset = blockIdx.x;
 
-	// // Each thread will write to element idx
-	// int idx = getGlobalIdx_1D_1D();
-
 	// Each thread in a block will calculate score for each hyphen (seq2 length threads in total)
 	tmp.hyphen_idx = threadIdx.x;
-	__syncthreads();
+	// __syncthreads();
 
 	dev_compare(source, &tmp, chars_comparision, weights);
 	dev_compare_scores_and_swap(&tmp, score);
