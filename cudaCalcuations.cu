@@ -1,3 +1,8 @@
+/*
+	Author:
+	Omer Lev-Ron
+*/
+
 #include <cuda_runtime.h>
 #include <helper_cuda.h>
 #include <string.h>
@@ -165,7 +170,7 @@ Score *cuda_calculation(Payload *source, Score *score, char *chars_comparision, 
 	status_code = cudaMemcpy(dev_weights, weights, sizeof(int) * WEIGHTS_NUM,
 					 cudaMemcpyHostToDevice);
 	check_for_error(status_code);
-
+	#pragma omp for
 	for (int i = 0; i < offset; ++i)
 	{
 		/* Kernel launch */

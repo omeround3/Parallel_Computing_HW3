@@ -1,5 +1,6 @@
 /*
-
+	Author:
+	Omer Lev-Ron
 */
 
 #ifndef SEQUENCE_ALIGNMENT_H_
@@ -43,7 +44,7 @@ void get_data(Payload *data, Score *score, int * num_of_sequences);
 Score* find_optimal_offset_omp(const Payload *source, Score *score, int start_offset, int end_offset);
 Score* find_optimal_offset(const Payload *source, Score *score, int start_offset, int end_offset);
 Score* deep_copy_score(const Score *source, Score *dest);
-Score* cuda_calculation(Payload *source, Score *score, char *chars_comparision,
+Score* cuda_calculation(Payload *source, Score *score, char *chars_comparison,
 		int *weights, int start_offset, int end_offset);
 
 #endif /* SEQUENCE_ALIGNMENT_H_ */

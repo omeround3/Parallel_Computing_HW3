@@ -27,7 +27,7 @@ char first_type_groups[FIRST_TYPE_GROUP_SIZE][GROUPS_STRINGS_SIZE] = {"NDEQ", "M
 char second_type_groups[SECOND_TYPE_GROUP_SIZE][GROUPS_STRINGS_SIZE] = {"SAG", "SGND", "NEQHRK", "HFY", "ATV", "STPA", "NDEQHK", "FVLIM", "CSA", "STNK", "SNDEQK"};
 
 int weights[WEIGHTS_NUM];			  /* array to hold weights values */
-char chars_comparision[CHARS][CHARS]; /* table for storing characters comparision answers */
+char chars_comparison[CHARS][CHARS]; /* table for storing characters comparison answers */
 
 int main(int argc, char *argv[])
 {
@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
 	/* 	Broadcasting shared values for all MPI's processes */
 	MPI_Bcast(&num_of_sequences, 1, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
 	MPI_Bcast(&weights, WEIGHTS_NUM, MPI_INT, MASTER_PROCESS, MPI_COMM_WORLD);
-	MPI_Bcast(&chars_comparision, CHARS * CHARS, MPI_CHAR, MASTER_PROCESS, MPI_COMM_WORLD);
+	MPI_Bcast(&chars_comparison, CHARS * CHARS, MPI_CHAR, MASTER_PROCESS, MPI_COMM_WORLD);
 	/* Allocation for other processes */
 	if (process_rank != 0)
 	{
@@ -162,7 +162,7 @@ int main(int argc, char *argv[])
 
 			/* Master process to do his work size */
 			/* Send to CUDA and OpenMP their offset part */
-			cuda_calculation(&payload[i], &scores[i], *chars_comparision, weights, cuda_start_offset, cuda_end_offset);
+			cuda_calculation(&payload[i], &scores[i], *chars_comparison, weights, cuda_start_offset, cuda_end_offset);
 			find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
 
 			/* Recieve results from other processes and   */
@@ -198,7 +198,7 @@ int main(int argc, char *argv[])
 			}
 			
 			/* Send to CUDA and OpenMP their offset part */
-			cuda_calculation(&payload[i], &scores[i], *chars_comparision, weights, cuda_start_offset, cuda_end_offset);
+			cuda_calculation(&payload[i], &scores[i], *chars_comparison, weights, cuda_start_offset, cuda_end_offset);
 			find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
 
 			/* Send results to Master Process */
@@ -349,7 +349,7 @@ void calculate_score(const Payload *payload, Score *score)
 			seq1_char = payload->seq1[char_index + score->offset] - 'A';
 		}
 		/* check sign of characters */
-		switch (chars_comparision[seq1_char][seq2_char])
+		switch (chars_comparison[seq1_char][seq2_char])
 		{
 		case '$':
 			score->alignment_score += weights[0];
@@ -380,7 +380,7 @@ void build_table()
 	{
 		for (int column = 0; column < CHARS; ++column)
 		{
-			chars_comparision[row][column] = (row == column) ? '$' : ' ';
+			chars_comparison[row][column] = (row == column) ? '$' : ' ';
 		}
 	}
 
@@ -407,10 +407,10 @@ void insert_string(const char *str, const char sign)
 		for (int offset = chr_idx + 1; offset < strlen(str); ++offset)
 		{
 			c2 = str[offset] - 'A';
-			if (chars_comparision[c1][c2] == ' ')
+			if (chars_comparison[c1][c2] == ' ')
 			{
-				chars_comparision[c1][c2] = sign;
-				chars_comparision[c2][c1] = sign;
+				chars_comparison[c1][c2] = sign;
+				chars_comparison[c2][c1] = sign;
 			}
 		}
 	}
