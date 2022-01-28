@@ -22,7 +22,6 @@ __device__ void dev_compare_scores_and_swap(const Score *s1, Score *s2)
 	}
 }
 
-
 /*
 The functions compares characters between the 2 sequences in the Payload,
 and calculates the alignment score for a sequence #2
@@ -95,22 +94,21 @@ __global__ void find_optimal_offset_cuda(Payload *source, Score *score, char *ch
 	}
 }
 
-void check_for_error(cudaError_t err)
+void check_for_error(cudaError_t status_code)
 {
-	if (err != cudaSuccess)
+	if (status_code != cudaSuccess)
 	{
-		fprintf(stderr, "%s\n", cudaGetErrorString(err));
+		fprintf(stderr, "%s\n", cudaGetErrorString(status_code));
 		exit(EXIT_FAILURE);
 	}
 }
 
-void cuda_free(void *ptr, cudaError_t err)
+void dev_free(void *p, cudaError_t status_code)
 {
-	// Free allocated memory on GPU - ArrayA
-	if (cudaFree(ptr) != cudaSuccess)
+	/* Free allocated memory on GPU  */
+	if (cudaFree(p) != cudaSuccess)
 	{
-		fprintf(stderr, "Failed to free device data - %s\n",
-				cudaGetErrorString(err));
+		fprintf(stderr, "Couldn't free device memory: %s\n", cudaGetErrorString(status_code));
 		exit(EXIT_FAILURE);
 	}
 }
@@ -123,68 +121,69 @@ Score *cuda_calculation(Payload *source, Score *score, char *chars_comparision, 
 
 	cudaDeviceProp dev_properties;
 	cudaGetDeviceProperties(&dev_properties, 0);
-	/* The number of blocks is equal to the offset range given to CUDA to calculate */
-	// int num_of_blocks = end_offset - start_offset;
+	/* The number of blocks depends on the length of the sequence to be compared to */
 	int num_of_blocks = source->len / dev_properties.maxThreadsPerBlock + 1;
+	/* Using maximum allowed threads per block */
 	int num_of_threads = dev_properties.maxThreadsPerBlock;
 	int offset = end_offset - start_offset;
-	/* Error code for verifying CUDA function */
-	cudaError_t err = cudaSuccess;
+	/* Error code for verifying CUDA functions */
+	cudaError_t status_code = cudaSuccess;
 
 	/* Device (GPU) memory allocation for source */
 	Payload *dev_source;
-	err = cudaMalloc((void **)&dev_source, sizeof(Payload));
-	check_for_error(err);
-
-	/* Device (GPU) memory allocation for score */
-	Score *dev_score;
-	err = cudaMalloc((void **)&dev_score, sizeof(Score));
-	check_for_error(err);
+	status_code = cudaMalloc((void **)&dev_source, sizeof(Payload));
+	check_for_error(status_code);
 
 	/* Device (GPU) memory allocation for chars_comparision */
 	char *dev_chars_comparision;
-	err = cudaMalloc((void **)&dev_chars_comparision, CHARS * CHARS);
-	check_for_error(err);
+	status_code = cudaMalloc((void **)&dev_chars_comparision, CHARS * CHARS);
+	check_for_error(status_code);
+
+	/* Device (GPU) memory allocation for score */
+	Score *dev_score;
+	status_code = cudaMalloc((void **)&dev_score, sizeof(Score));
+	check_for_error(status_code);
+
+	/* Memory copy from host to device (GPU) */
+	status_code = cudaMemcpy(dev_source, source, sizeof(Payload), cudaMemcpyHostToDevice);
+	check_for_error(status_code);
 
 	/* Device (GPU) memory allocation for weights */
 	int *dev_weights;
-	err = cudaMalloc((void **)&dev_weights, sizeof(int) * WEIGHTS_NUM);
-	check_for_error(err);
+	status_code = cudaMalloc((void **)&dev_weights, sizeof(int) * WEIGHTS_NUM);
+	check_for_error(status_code);
 
 	/* Memory copy from host to device (GPU) */
-	err = cudaMemcpy(dev_source, source, sizeof(Payload), cudaMemcpyHostToDevice);
-	check_for_error(err);
+	status_code = cudaMemcpy(dev_score, score, sizeof(Score), cudaMemcpyHostToDevice);
+	check_for_error(status_code);
 
 	/* Memory copy from host to device (GPU) */
-	err = cudaMemcpy(dev_score, score, sizeof(Score), cudaMemcpyHostToDevice);
-	check_for_error(err);
+	status_code = cudaMemcpy(dev_chars_comparision, chars_comparision, CHARS * CHARS, cudaMemcpyHostToDevice);
+	check_for_error(status_code);
 
 	/* Memory copy from host to device (GPU) */
-	err = cudaMemcpy(dev_chars_comparision, chars_comparision, CHARS * CHARS, cudaMemcpyHostToDevice);
-	check_for_error(err);
-
-	/* Memory copy from host to device (GPU) */
-	err = cudaMemcpy(dev_weights, weights, sizeof(int) * WEIGHTS_NUM,
+	status_code = cudaMemcpy(dev_weights, weights, sizeof(int) * WEIGHTS_NUM,
 					 cudaMemcpyHostToDevice);
-	check_for_error(err);
+	check_for_error(status_code);
 
 	for (int i = 0; i < offset; ++i)
 	{
+		/* Kernel launch */
 		find_optimal_offset_cuda<<<num_of_blocks, num_of_threads>>>(dev_source, dev_score, dev_chars_comparision, dev_weights, i);
-		err = cudaGetLastError();
-		check_for_error(err);
+		status_code = cudaGetLastError();
+		check_for_error(status_code);
 	}
-	// Launch the Kernel
 	
 
-	// Copy the  result from GPU to the host memory.
-	err = cudaMemcpy(score, dev_score, sizeof(Score), cudaMemcpyDeviceToHost);
-	check_for_error(err);
+	/* Send calculation result to Host from device (GPU) */
+	status_code = cudaMemcpy(score, dev_score, sizeof(Score), cudaMemcpyDeviceToHost);
+	check_for_error(status_code);
 
-	// Free allocated space in GPU
-	cuda_free(dev_source, err);
-	cuda_free(dev_score, err);
-	cuda_free(dev_chars_comparision, err);
-	cuda_free(dev_weights, err);
+	/* Device (GPU) free allocation */
+	dev_free(dev_source, status_code);
+	dev_free(dev_score, status_code);
+	dev_free(dev_chars_comparision, status_code);
+	dev_free(dev_weights, status_code);
+
 	return score;
 }
