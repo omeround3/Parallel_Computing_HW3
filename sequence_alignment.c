@@ -36,10 +36,9 @@ int main(int argc, char *argv[])
 	int process_rank;	  /* process rank (process ID) */
 	int work_size;
 	int offset_remainder;
-	int process_start_offset, process_end_offset;
+	int cuda_start_offset, cuda_end_offset;
 	int cuda_omp_work_size, cuda_omp_offset_reminder;
 	int omp_start_offset, omp_end_offset;
-	int cuda_start_offset, cuda_end_offset;
 
 	MPI_Status status; /* return status for receive */
 
@@ -52,12 +51,11 @@ int main(int argc, char *argv[])
 
 	Payload *payload;
 	Score *scores;
-	// WorkSize *work_sizes;
 
 	/* Check if number of processes is 2 or more */
 	if (procceses_amount < 2)
 	{
-		fprintf(stderr, "%s: Require at least two processors.", argv[0]);
+		fprintf(stderr, "%s: The program requires at least two processors. Use -n 2 or bigger.", argv[0]);
 		MPI_Abort(MPI_COMM_WORLD, __LINE__);
 	}
 
@@ -82,7 +80,6 @@ int main(int argc, char *argv[])
 		fscanf(stdin, "%d", &num_of_sequences);
 		payload = (Payload *)malloc(sizeof(Payload) * num_of_sequences);
 		scores = (Score *)malloc(sizeof(Score) * num_of_sequences);
-		// work_sizes = (WorkSize *)malloc(sizeof(WorkSize) * num_of_sequences);
 
 		/* Get the sequeneces for comparision and save into structs */
 		for (int i = 0; i < num_of_sequences; i++)
@@ -158,15 +155,14 @@ int main(int argc, char *argv[])
 			cuda_omp_offset_reminder = work_size % procceses_amount;
 
 			/* Set start/end offsets */
-			process_start_offset = process_rank * work_size;
-			process_end_offset = process_start_offset + cuda_omp_work_size;
-			omp_start_offset = process_end_offset;
+			cuda_start_offset = process_rank * work_size;
+			cuda_end_offset = cuda_start_offset + cuda_omp_work_size;
+			omp_start_offset = cuda_end_offset;
 			omp_end_offset = omp_start_offset + cuda_omp_work_size + cuda_omp_offset_reminder;
 
 			/* Master process to do his work size */
-			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
-
-			// find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
+			/* Send to CUDA and OpenMP their offset part */
+			cuda_calculation(&payload[i], &scores[i], *chars_comparision, weights, cuda_start_offset, cuda_end_offset);
 			find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
 
 			/* Recieve results from other processes and   */
@@ -190,9 +186,9 @@ int main(int argc, char *argv[])
 			cuda_omp_offset_reminder = work_size % procceses_amount;
 
 			/* Set start/end offsets */
-			process_start_offset = process_rank * work_size;
-			process_end_offset = process_start_offset + cuda_omp_work_size;
-			omp_start_offset = process_end_offset;
+			cuda_start_offset = process_rank * work_size;
+			cuda_end_offset = cuda_start_offset + cuda_omp_work_size;
+			omp_start_offset = cuda_end_offset;
 			omp_end_offset = omp_start_offset + cuda_omp_work_size + cuda_omp_offset_reminder;
 
 			/* Last process handles offset reminder if exists */
@@ -200,12 +196,12 @@ int main(int argc, char *argv[])
 			{
 				omp_end_offset += offset_remainder;
 			}
-
-			find_optimal_offset(&payload[i], &scores[i], process_start_offset, process_end_offset);
-
-			// find_optimal_offset(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
+			
+			/* Send to CUDA and OpenMP their offset part */
+			cuda_calculation(&payload[i], &scores[i], *chars_comparision, weights, cuda_start_offset, cuda_end_offset);
 			find_optimal_offset_omp(&payload[i], &scores[i], omp_start_offset, omp_end_offset);
 
+			/* Send results to Master Process */
 			MPI_Send(&scores[i], 1, ScoreMPIType, MASTER_PROCESS, RESULT_TAG, MPI_COMM_WORLD);
 		}
 	}
@@ -227,12 +223,20 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
+/* 
+This function finds the optimal offset(n) and mutant (k) for the 2 given sequences 
+in the Payload. The start_offset and end_offset are the part the functions gets for
+its calculations.   
+
+Inner loop uses OpenMP for mutant(k) calculations
+*/
 Score *find_optimal_offset_omp(const Payload *source, Score *score, int start_offset, int end_offset)
 {
 	Score *tmp = (Score *)malloc(sizeof(Score));
 
-	/* Run first compare on source score and then compare to tmp scores */
-	compare(source, score);
+
+	/* Run first calculate_score on source score and then compare to tmp score */
+	calculate_score(source, score);
 	tmp = deep_copy_score(score, tmp);
 
 	for (int i = start_offset; i <= end_offset - 1; ++i)
@@ -245,7 +249,7 @@ Score *find_optimal_offset_omp(const Payload *source, Score *score, int start_of
 			tmp->hyphen_idx = j;
 			#pragma omp critical
 			{
-				compare(source, tmp);
+				calculate_score(source, tmp);
 				compare_scores_and_swap(tmp, score);
 			}
 		}
@@ -260,12 +264,19 @@ Score *find_optimal_offset_omp(const Payload *source, Score *score, int start_of
 	return score;
 }
 
+/* 
+This function finds the optimal offset(n) and mutant (k) for the 2 given sequences 
+in the Payload. The start_offset and end_offset are the part the functions gets for
+its calculations.   
+
+This function was used for MPI calculations without OpenMP or CUDA
+*/
 Score *find_optimal_offset(const Payload *source, Score *score, int start_offset, int end_offset)
 {
 	Score *tmp = (Score *)malloc(sizeof(Score));
 
-	/* Run first compare on source score and then compare to tmp scores */
-	compare(source, score);
+	/* Run first calculate_score on source score and then compare to tmp score */
+	calculate_score(source, score);
 	tmp = deep_copy_score(score, tmp);
 
 	for (int i = start_offset; i <= end_offset - 1 && is_score_optimized(score); ++i)
@@ -276,7 +287,7 @@ Score *find_optimal_offset(const Payload *source, Score *score, int start_offset
 		for (int j = 1; j < source->len && is_score_optimized(score); ++j)
 		{
 			tmp->hyphen_idx = j;
-			compare(source, tmp);
+			calculate_score(source, tmp);
 			compare_scores_and_swap(tmp, score);
 		}
 	}
@@ -299,11 +310,13 @@ void compare_scores_and_swap(const Score *s1, Score *s2)
 	}
 }
 
+/* An helper method to optimize calculations; the method checks if current score is the max */
 int is_score_optimized(Score *score)
 {
 	return !(score->alignment_score == score->max_score);
 }
 
+/* Deep copy of one Score instance to another */
 Score *deep_copy_score(const Score *source, Score *dest)
 {
 	dest->offset = source->offset;
@@ -317,7 +330,7 @@ Score *deep_copy_score(const Score *source, Score *dest)
 The functions compares characters between the 2 sequences in the Payload,
 and calculates the alignment score for a sequence #2
 */
-void compare(const Payload *payload, Score *score)
+void calculate_score(const Payload *payload, Score *score)
 {
 	int passed_hypen_flag = 0;
 	int seq1_char, seq2_char;
@@ -403,6 +416,7 @@ void insert_string(const char *str, const char sign)
 	}
 }
 
+/* This functions prints the calculations results */
 void results_output(Score *scores, int num_sequences)
 {
 	fprintf(stdout, "The number of sequences in the input is: %d\n", num_sequences);
