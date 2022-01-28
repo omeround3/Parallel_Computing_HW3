@@ -234,6 +234,7 @@ Score *find_optimal_offset_omp(const Payload *source, Score *score, int start_of
 {
 	Score *tmp = (Score *)malloc(sizeof(Score));
 
+
 	/* Run first calculate_score on source score and then compare to tmp score */
 	calculate_score(source, score);
 	tmp = deep_copy_score(score, tmp);
