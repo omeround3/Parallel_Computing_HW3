@@ -65,28 +65,37 @@ __device__ void dev_compare(const Payload *payload, Score *score, char *chars_co
 	}
 }
 
-__global__ void find_optimal_offset_cuda(Payload *source, Score *score, char *chars_comparision, int *weights)
+__device__ int getGlobalIdx_1D_1D()
+{
+	return blockIdx.x * blockDim.x + threadIdx.x;
+}
+
+__global__ void find_optimal_offset_cuda(Payload *source, Score *score, char *chars_comparision, int *weights, int offset)
 {
 	Score tmp;
-	
+	int tid = threadIdx.x;
+	int col_offset = blockDim.x * blockIdx.x;
+	int gid = tid + col_offset;
+
 	/* Run first compare on source score and then compare to tmp scores */
 	// dev_compare(source, score, chars_comparision, weights);
 	dev_deep_copy_score(score, &tmp);
 	
 	/* Each block will be responsible for an offset */
-	tmp.offset = blockIdx.x;
+	tmp.offset = offset;
 
-	// Each thread in a block will calculate score for each hyphen (seq2 length threads in total)
-	tmp.hyphen_idx = threadIdx.x;
-	// __syncthreads();
-
-	dev_compare(source, &tmp, chars_comparision, weights);
-	dev_compare_scores_and_swap(&tmp, score);
-
-	/* hyphen_idx = 0 -> means the hyphen is at the end of the string (e.g. ABC-) */
-	if (score->hyphen_idx == 0)
+	/* Each thread in a block will calculate score for each hyphen (seq2 length threads in total) */
+	tmp.hyphen_idx = gid;
+	__syncthreads();
+	if (gid < source->len)
 	{
-		score->hyphen_idx = source->len;
+		dev_compare(source, &tmp, chars_comparision, weights);
+		dev_compare_scores_and_swap(&tmp, score);
+		/* hyphen_idx = 0 -> means the hyphen is at the end of the string (e.g. ABC-) */
+		if (score->hyphen_idx == 0)
+		{
+			score->hyphen_idx = source->len;
+		}
 	}
 }
 
@@ -116,9 +125,13 @@ Score *cuda_calculation(Payload *source, Score *score, char *chars_comparision, 
 	Score tmp;
 	deep_copy_score(score, &tmp);
 
+	cudaDeviceProp dev_properties;
+	cudaGetDeviceProperties(&dev_properties, 0);
 	/* The number of blocks is equal to the offset range given to CUDA to calculate */
-	int num_of_blocks = end_offset - start_offset;
-
+	// int num_of_blocks = end_offset - start_offset;
+	int num_of_blocks = source->len / dev_properties.maxThreadsPerBlock + 1;
+	int num_of_threads = dev_properties.maxThreadsPerBlock;
+	int offset = end_offset - start_offset;
 	/* Error code for verifying CUDA function */
 	cudaError_t err = cudaSuccess;
 
@@ -159,10 +172,14 @@ Score *cuda_calculation(Payload *source, Score *score, char *chars_comparision, 
 					 cudaMemcpyHostToDevice);
 	check_for_error(err);
 
+	for (int i = 0; i < offset; ++i)
+	{
+		find_optimal_offset_cuda<<<num_of_blocks, num_of_threads>>>(dev_source, dev_score, dev_chars_comparision, dev_weights, i);
+		err = cudaGetLastError();
+		check_for_error(err);
+	}
 	// Launch the Kernel
-	find_optimal_offset_cuda<<<num_of_blocks, source->len>>>(dev_source, dev_score, dev_chars_comparision, dev_weights);
-	err = cudaGetLastError();
-	check_for_error(err);
+	
 
 	// Copy the  result from GPU to the host memory.
 	err = cudaMemcpy(score, dev_score, sizeof(Score), cudaMemcpyDeviceToHost);
