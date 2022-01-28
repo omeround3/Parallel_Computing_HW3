@@ -3,7 +3,7 @@
 #include <string.h>
 #include "sequence_alignment.h"
 
-
+/* Deep copy of one Score instance to another */
 __device__ Score *dev_deep_copy_score(const Score *source, Score *dest)
 {
 	dest->offset = source->offset;
@@ -27,7 +27,7 @@ __device__ void dev_compare_scores_and_swap(const Score *s1, Score *s2)
 The functions compares characters between the 2 sequences in the Payload,
 and calculates the alignment score for a sequence #2
 */
-__device__ void dev_compare(const Payload *payload, Score *score, char *chars_comparision,
+__device__ void dev_calculate_score(const Payload *payload, Score *score, char *chars_comparision,
 							  int *weights)
 {
 	int passed_hypen_flag = 0;
@@ -65,10 +65,6 @@ __device__ void dev_compare(const Payload *payload, Score *score, char *chars_co
 	}
 }
 
-__device__ int getGlobalIdx_1D_1D()
-{
-	return blockIdx.x * blockDim.x + threadIdx.x;
-}
 
 __global__ void find_optimal_offset_cuda(Payload *source, Score *score, char *chars_comparision, int *weights, int offset)
 {
@@ -77,8 +73,8 @@ __global__ void find_optimal_offset_cuda(Payload *source, Score *score, char *ch
 	int col_offset = blockDim.x * blockIdx.x;
 	int gid = tid + col_offset;
 
-	/* Run first compare on source score and then compare to tmp scores */
-	// dev_compare(source, score, chars_comparision, weights);
+	/* Run first calculate_score on source score and then compare to tmp scores */
+	// dev_calculate_score(source, score, chars_comparision, weights);
 	dev_deep_copy_score(score, &tmp);
 	
 	/* Each block will be responsible for an offset */
@@ -89,7 +85,7 @@ __global__ void find_optimal_offset_cuda(Payload *source, Score *score, char *ch
 	__syncthreads();
 	if (gid < source->len)
 	{
-		dev_compare(source, &tmp, chars_comparision, weights);
+		dev_calculate_score(source, &tmp, chars_comparision, weights);
 		dev_compare_scores_and_swap(&tmp, score);
 		/* hyphen_idx = 0 -> means the hyphen is at the end of the string (e.g. ABC-) */
 		if (score->hyphen_idx == 0)
